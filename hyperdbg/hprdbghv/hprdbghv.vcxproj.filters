@@ -120,11 +120,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="hprdbghv.inf">
-      <Filter>driver</Filter>
-    </Inf>
-  </ItemGroup>
-  <ItemGroup>
     <ClCompile Include="code\common\Common.c">
       <Filter>code\common</Filter>
     </ClCompile>
