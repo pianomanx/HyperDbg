@@ -26,6 +26,18 @@ typedef struct _LOCAL_FUNCTION_DESCRIPTION
 
 } LOCAL_FUNCTION_DESCRIPTION, *PLOCAL_FUNCTION_DESCRIPTION;
 
+/**
+ * @brief Save the local module symbols' description
+ *
+ */
+typedef struct _IMAGE_SYMBOL_CONTEXT
+{
+    UINT64  ImageBase;
+    UINT64  CodeBase;
+    UINT64  CodeSize;
+    UINT8 * Code;
+} IMAGE_SYMBOL_CONTEXT;
+
 //////////////////////////////////////////////////
 //			    	    Pdbex                   //
 //////////////////////////////////////////////////

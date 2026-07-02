@@ -11,13 +11,15 @@ New release of the HyperDbg Debugger.
 - Added structure for the hyperperf (Hardware Performance Counter) project ([link](https://github.com/HyperDbg/HyperDbg/commit/c17ebc09c4d199a642352e66feebb3159582196c))
 - The 'unload' command checks whether any module is loaded or not ([link](https://docs.hyperdbg.org/commands/debugging-commands/unload))
 - Exported SDK API for checking whether any module is loaded or not ([link](https://github.com/HyperDbg/HyperDbg/commit/19e47c804f50f5dbb698f314e66b7d685a87ac1f))
+- Added user mode and kernel mode PT parameter parser ([link](https://github.com/HyperDbg/HyperDbg/pull/631))
 
 ### Changed
 - Separated SDK libraries for user mode and kernel mode modules ([link](https://github.com/HyperDbg/HyperDbg/commit/c17ebc09c4d199a642352e66feebb3159582196c))
 - Added hypertrace, hyperevade, and hyperperf DLL files to SDK ([link](https://github.com/HyperDbg/HyperDbg/commit/c17ebc09c4d199a642352e66feebb3159582196c))
 - Fix pool manager uninitialize list corruption ([link](https://github.com/HyperDbg/HyperDbg/pull/629))
 - Fix 'access denied' error on loading all modules using 'load all' ([link](https://docs.hyperdbg.org/commands/debugging-commands/load))([link](https://github.com/HyperDbg/HyperDbg/commit/2b818a5116d80d466aab7b343d4aa9d1d640f082))
-- Fix concatenation error for "hyperkd" string on the hypertrace project
+- Fix the concatenation error for the "hyperkd" string on the hypertrace project (https://github.com/HyperDbg/HyperDbg/commit/2b0cc18899ff532d9d590a71bf880fee5456c15f))
+- Organized header files for the libhyperdbg project  ([link](https://github.com/HyperDbg/HyperDbg/pull/632))
 
 ## [0.20.0.0-beta] - 2026-06-21
 New release of the HyperDbg Debugger.

@@ -1,6 +1,7 @@
 /**
  * @file pt.cpp
  * @author Masoud Rahimi Jafari (Masoodrahimy1379@gmail.com)
+ * @author Sina Karvandi (sina@hyperdbg.org)
  * @brief !pt command
  * @details
  * @version 0.19
@@ -17,6 +18,8 @@
 extern BOOLEAN g_IsHyperTraceModuleLoaded;
 extern BOOLEAN g_IsSerialConnectedToRemoteDebuggee;
 
+
+
 /**
  * @brief help of the !pt command
  *
@@ -29,9 +32,10 @@ CommandPtHelp()
 
     ShowMessages("syntax : \t!pt enable\n");
     ShowMessages("syntax : \t!pt enable [size BufferSize (hex)]\n");
-    ShowMessages("syntax : \t!pt enable [pid ProcessId (hex)] [size BufferSize (hex)]\n");
-    ShowMessages("syntax : \t!pt enable [tid ThreadId (hex)] [size BufferSize (hex)]\n");
-    ShowMessages("syntax : \t!pt enable [pname ProcessName (string)] [size BufferSize (hex)]\n");
+    ShowMessages("syntax : \t!pt enable [pid ProcessId (hex)] [size BufferSize (hex)] [core CoreId (hex)]\n");
+    ShowMessages("syntax : \t!pt enable [tid ThreadId (hex)] [size BufferSize (hex)] [core CoreId (hex)]\n");
+    ShowMessages("syntax : \t!pt enable [pname ProcessName (string)] [size BufferSize (hex)] [core CoreId (hex)]\n");
+    ShowMessages("syntax : \t!pt enable [path Path (string)] [size BufferSize (hex)] [core CoreId (hex)]\n");
     ShowMessages("syntax : \t!pt enable [cr3 Cr3Value (hex)] [size BufferSize (hex)]\n");
     ShowMessages("syntax : \t!pt disable\n");
     ShowMessages("syntax : \t!pt pause\n");
@@ -51,9 +55,10 @@ CommandPtHelp()
     ShowMessages("\t\te.g : !pt enable size 0x200000\n");
     ShowMessages("\t\te.g : !pt enable pid 0x4a8\n");
     ShowMessages("\t\te.g : !pt enable pname notepad.exe\n");
-    ShowMessages("\t\te.g : !pt enable tid 0x1234\n");
+    ShowMessages("\t\te.g : !pt enable tid 0x1234 core 3\n");
     ShowMessages("\t\te.g : !pt enable cr3 0x1aabb000\n");
     ShowMessages("\t\te.g : !pt enable pid 0x4a8 size 0x200000\n");
+    ShowMessages("\t\te.g : !pt enable path \"c:\\programs\\my exe file.exe\" size 0x200000 core 3\n");
     ShowMessages("\t\te.g : !pt disable\n");
     ShowMessages("\t\te.g : !pt pause\n");
     ShowMessages("\t\te.g : !pt resume\n");
@@ -155,6 +160,745 @@ HyperDbgPerformPtOperation(HYPERTRACE_PT_OPERATION_PACKETS * PtRequest)
 }
 
 /**
+ * @brief Send pt enable command
+ *
+ * @return BOOLEAN
+ */
+static BOOLEAN
+CommandPtSendEnable()
+{
+    HYPERTRACE_PT_OPERATION_PACKETS PtRequest = {};
+
+    //
+    // Set the PtRequest structure for the operation
+    //
+    PtRequest.PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_ENABLE;
+
+    //
+    // Send the request to perform the operation
+    //
+    if (!HyperDbgPerformPtOperation(&PtRequest))
+    {
+        return FALSE;
+    }
+    else
+    {
+        return TRUE;
+    }
+}
+
+/**
+ * @brief Send pt disable command
+ *
+ * @return BOOLEAN
+ */
+static BOOLEAN
+CommandPtSendDisable()
+{
+    HYPERTRACE_PT_OPERATION_PACKETS PtRequest = {};
+
+    //
+    // Set the PtRequest structure for the operation
+    //
+    PtRequest.PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_DISABLE;
+
+    //
+    // Send the request to perform the operation
+    //
+    if (!HyperDbgPerformPtOperation(&PtRequest))
+    {
+        return FALSE;
+    }
+    else
+    {
+        return TRUE;
+    }
+}
+
+/**
+ * @brief Send pt pause command
+ *
+ * @return BOOLEAN
+ */
+static BOOLEAN
+CommandPtSendPause()
+{
+    HYPERTRACE_PT_OPERATION_PACKETS PtRequest = {};
+
+    //
+    // Set the PtRequest structure for the operation
+    //
+    PtRequest.PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_PAUSE;
+
+    //
+    // Send the request to perform the operation
+    //
+    if (!HyperDbgPerformPtOperation(&PtRequest))
+    {
+        return FALSE;
+    }
+    else
+    {
+        return TRUE;
+    }
+}
+
+/**
+ * @brief Send pt resume command
+ *
+ * @return BOOLEAN
+ */
+static BOOLEAN
+CommandPtSendResume()
+{
+    HYPERTRACE_PT_OPERATION_PACKETS PtRequest = {};
+
+    //
+    // Set the PtRequest structure for the operation
+    //
+    PtRequest.PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_RESUME;
+
+    //
+    // Send the request to perform the operation
+    //
+    if (!HyperDbgPerformPtOperation(&PtRequest))
+    {
+        return FALSE;
+    }
+    else
+    {
+        return TRUE;
+    }
+}
+
+/**
+ * @brief Send pt flush command
+ *
+ * @return BOOLEAN
+ */
+static BOOLEAN
+CommandPtSendFlush()
+{
+    HYPERTRACE_PT_OPERATION_PACKETS PtRequest = {};
+
+    //
+    // Set the PtRequest structure for the operation
+    //
+    PtRequest.PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_FLUSH;
+
+    //
+    // Send the request to perform the operation
+    //
+    if (!HyperDbgPerformPtOperation(&PtRequest))
+    {
+        return FALSE;
+    }
+    else
+    {
+        return TRUE;
+    }
+}
+
+/**
+ * @brief Send pt filter command
+ *
+ * @return BOOLEAN
+ */
+static BOOLEAN
+CommandPtSendFilterByPid(UINT32  ProcessId,
+                         BOOLEAN IsUserMode,
+                         BOOLEAN IsKernelMode,
+                         UINT64  StartRange1,
+                         UINT64  EndRange1,
+                         UINT64  StartRange2,
+                         UINT64  EndRange2,
+                         UINT64  StartRange3,
+                         UINT64  EndRange3,
+                         UINT64  StartRange4,
+                         UINT64  EndRange4)
+{
+    HYPERTRACE_PT_OPERATION_PACKETS Op             = {};
+    UINT8                           NumberOfRanges = 0;
+
+    //
+    // Set the Op structure for the operation
+    //
+    Op.PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_FILTER;
+
+    //
+    // Set execution modes
+    //
+    Op.FilterOptions.TraceUser   = IsUserMode ? 1 : 0;
+    Op.FilterOptions.TraceKernel = IsKernelMode ? 1 : 0;
+
+    //
+    // Set the process ID
+    //
+    Op.EnableOptions.Pid = ProcessId;
+
+    //
+    // Set the first range if provided
+    //
+    if (StartRange1 != NULL && EndRange1 != NULL)
+    {
+        Op.FilterOptions.AddrRanges[NumberOfRanges].Start = StartRange1;
+        Op.FilterOptions.AddrRanges[NumberOfRanges].End   = EndRange1;
+        NumberOfRanges++;
+    }
+
+    //
+    // Set the second range if provided
+    //
+    if (StartRange2 != NULL && EndRange2 != NULL)
+    {
+        Op.FilterOptions.AddrRanges[NumberOfRanges].Start = StartRange2;
+        Op.FilterOptions.AddrRanges[NumberOfRanges].End   = EndRange2;
+        NumberOfRanges++;
+    }
+
+    //
+    // Set the third range if provided
+    //
+    if (StartRange3 != NULL && EndRange3 != NULL)
+    {
+        Op.FilterOptions.AddrRanges[NumberOfRanges].Start = StartRange3;
+        Op.FilterOptions.AddrRanges[NumberOfRanges].End   = EndRange3;
+        NumberOfRanges++;
+    }
+
+    //
+    // Set the fourth range if provided
+    //
+    if (StartRange4 != NULL && EndRange4 != NULL)
+    {
+        Op.FilterOptions.AddrRanges[NumberOfRanges].Start = StartRange4;
+        Op.FilterOptions.AddrRanges[NumberOfRanges].End   = EndRange4;
+        NumberOfRanges++;
+    }
+
+    //
+    // Set number of ranges
+    //
+    Op.FilterOptions.NumAddrRanges = NumberOfRanges;
+
+    //
+    // Send the request to perform the operation
+    //
+    if (!HyperDbgPerformPtOperation(&Op))
+    {
+        return FALSE;
+    }
+    else
+    {
+        ShowMessages("[+] PT Filter: cr3=0x%llx, pid=0x%x, user=%x, kernel=%x, ranges=%x\n",
+                     Op.EnableOptions.Cr3,
+                     Op.EnableOptions.Pid,
+                     Op.FilterOptions.TraceUser,
+                     Op.FilterOptions.TraceKernel,
+                     Op.FilterOptions.NumAddrRanges);
+
+        return TRUE;
+    }
+
+    return TRUE;
+}
+
+static int
+CommandPtReadImage(UINT8 * Buffer, SIZE_T Size, const struct pt_asid * Asid, UINT64 Ip, VOID * Context)
+{
+    (VOID) Asid;
+
+    IMAGE_SYMBOL_CONTEXT * Ctx = (IMAGE_SYMBOL_CONTEXT *)Context;
+
+    if (Ctx == NULL || Ctx->Code == NULL || Ip < Ctx->CodeBase || Ip >= Ctx->CodeBase + Ctx->CodeSize)
+        return -pte_nomap;
+
+    UINT64 Available = Ctx->CodeBase + Ctx->CodeSize - Ip;
+    SIZE_T Count     = (Size < Available) ? Size : (SIZE_T)Available;
+
+    memcpy(Buffer, Ctx->Code + (Ip - Ctx->CodeBase), Count);
+    return (int)Count;
+}
+
+typedef struct _PROC_BASIC_INFO
+{
+    LONG      ExitStatus;
+    PVOID     PebBaseAddress;
+    ULONG_PTR Reserved[4];
+} PROC_BASIC_INFO;
+
+typedef LONG(NTAPI * PFN_NT_QIP)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+
+static BOOLEAN
+CommandPtCaptureImage(HANDLE Process, UINT64 * TextStart, UINT64 * TextEnd, IMAGE_SYMBOL_CONTEXT * Ctx)
+{
+    HMODULE            Ntdll = GetModuleHandleA("ntdll.dll");
+    PFN_NT_QIP         NtQip = Ntdll ? (PFN_NT_QIP)GetProcAddress(Ntdll, "NtQueryInformationProcess") : NULL;
+    PROC_BASIC_INFO    Pbi   = {0};
+    ULONG              Ret   = 0;
+    SIZE_T             Got   = 0;
+    UINT64             Base  = 0;
+    IMAGE_DOS_HEADER   Dos;
+    IMAGE_NT_HEADERS64 Nt;
+    UINT64             SectionBase;
+
+    if (NtQip == NULL || NtQip(Process, 0, &Pbi, sizeof(Pbi), &Ret) < 0 || Pbi.PebBaseAddress == NULL)
+        return FALSE;
+
+    if (!ReadProcessMemory(Process, (PBYTE)Pbi.PebBaseAddress + 0x10, &Base, sizeof(Base), &Got) || Base == 0)
+        return FALSE;
+
+    if (!ReadProcessMemory(Process, (PVOID)Base, &Dos, sizeof(Dos), &Got) || Dos.e_magic != IMAGE_DOS_SIGNATURE)
+        return FALSE;
+
+    if (!ReadProcessMemory(Process, (PBYTE)Base + Dos.e_lfanew, &Nt, sizeof(Nt), &Got) || Nt.Signature != IMAGE_NT_SIGNATURE)
+        return FALSE;
+
+    Ctx->ImageBase = Base;
+    SectionBase    = Base + Dos.e_lfanew + FIELD_OFFSET(IMAGE_NT_HEADERS64, OptionalHeader) + Nt.FileHeader.SizeOfOptionalHeader;
+
+    for (WORD i = 0; i < Nt.FileHeader.NumberOfSections; i++)
+    {
+        IMAGE_SECTION_HEADER Section;
+
+        if (!ReadProcessMemory(Process, (PBYTE)SectionBase + (UINT64)i * sizeof(Section), &Section, sizeof(Section), &Got))
+            return FALSE;
+
+        if (memcmp(Section.Name, ".text", 6) != 0)
+            continue;
+
+        UINT64 Start = Base + Section.VirtualAddress;
+        UINT64 Size  = Section.Misc.VirtualSize ? Section.Misc.VirtualSize : Section.SizeOfRawData;
+
+        if (Size == 0)
+            return FALSE;
+
+        Ctx->Code = (UINT8 *)malloc((SIZE_T)Size);
+        if (Ctx->Code == NULL)
+            return FALSE;
+
+        if (!ReadProcessMemory(Process, (PVOID)Start, Ctx->Code, (SIZE_T)Size, &Got) || Got != Size)
+        {
+            free(Ctx->Code);
+            Ctx->Code = NULL;
+            return FALSE;
+        }
+
+        Ctx->CodeBase = Start;
+        Ctx->CodeSize = Size;
+        *TextStart    = Start;
+        *TextEnd      = Start + Size - 1;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static BOOLEAN
+CommandPtResolveFunction(HANDLE Process, const CHAR * Path, const CHAR * Name, UINT64 ImageBase, UINT64 * Start, UINT64 * End)
+{
+    union
+    {
+        SYMBOL_INFO Info;
+        BYTE        Buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME];
+    } Symbol   = {0};
+    BOOLEAN Ok = FALSE;
+
+    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
+    if (!SymInitialize(Process, NULL, FALSE))
+        return FALSE;
+
+    if (SymLoadModuleEx(Process, NULL, Path, NULL, (DWORD64)ImageBase, 0, NULL, 0) != 0)
+    {
+        Symbol.Info.SizeOfStruct = sizeof(SYMBOL_INFO);
+        Symbol.Info.MaxNameLen   = MAX_SYM_NAME;
+
+        if (SymFromName(Process, Name, &Symbol.Info) && Symbol.Info.Address != 0)
+        {
+            *Start = Symbol.Info.Address;
+            *End   = Symbol.Info.Address + (Symbol.Info.Size ? Symbol.Info.Size : 0x200) - 1;
+            Ok     = TRUE;
+        }
+    }
+
+    SymCleanup(Process);
+    return Ok;
+}
+
+static const CHAR *
+CommandPtPacketName(enum pt_packet_type Type)
+{
+    switch (Type)
+    {
+    case ppt_psb:
+        return "PSB";
+    case ppt_psbend:
+        return "PSBEND";
+    case ppt_pad:
+        return "PAD";
+    case ppt_fup:
+        return "FUP";
+    case ppt_tip:
+        return "TIP";
+    case ppt_tip_pge:
+        return "TIP.PGE";
+    case ppt_tip_pgd:
+        return "TIP.PGD";
+    case ppt_tnt_8:
+        return "TNT8";
+    case ppt_tnt_64:
+        return "TNT64";
+    case ppt_mode:
+        return "MODE";
+    case ppt_pip:
+        return "PIP";
+    case ppt_vmcs:
+        return "VMCS";
+    case ppt_cbr:
+        return "CBR";
+    case ppt_tsc:
+        return "TSC";
+    case ppt_tma:
+        return "TMA";
+    case ppt_mtc:
+        return "MTC";
+    case ppt_cyc:
+        return "CYC";
+    case ppt_ovf:
+        return "OVF";
+    case ppt_stop:
+        return "STOP";
+    case ppt_exstop:
+        return "EXSTOP";
+    case ppt_mnt:
+        return "MNT";
+    case ppt_ptw:
+        return "PTW";
+    default:
+        return "?";
+    }
+}
+
+static UINT64
+CommandPtReconstructIp(const struct pt_packet_ip * Packet, UINT64 * LastIp)
+{
+    UINT64 Value = *LastIp;
+
+    switch (Packet->ipc)
+    {
+    case pt_ipc_update_16:
+        Value = (Value & ~0xffffull) | (Packet->ip & 0xffffull);
+        break;
+    case pt_ipc_update_32:
+        Value = (Value & ~0xffffffffull) | (Packet->ip & 0xffffffffull);
+        break;
+    case pt_ipc_update_48:
+        Value = (Value & ~0xffffffffffffull) | (Packet->ip & 0xffffffffffffull);
+        break;
+    case pt_ipc_sext_48:
+        Value = Packet->ip & 0xffffffffffffull;
+        if (Value & 0x800000000000ull)
+            Value |= 0xffff000000000000ull;
+        break;
+    default:
+        Value = Packet->ip;
+        break;
+    }
+
+    *LastIp = Value;
+    return Value;
+}
+
+static UINT64
+CommandPtDecodeCorePackets(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size, UINT64 ImageBase)
+{
+    struct pt_config           Config;
+    struct pt_packet_decoder * Decoder;
+    UINT64                     Count  = 0;
+    UINT64                     LastIp = 0;
+    int                        Status;
+
+    pt_config_init(&Config);
+    Config.begin = (UINT8 *)Buffer;
+    Config.end   = (UINT8 *)Buffer + Size;
+
+    Decoder = pt_pkt_alloc_decoder(&Config);
+    if (Decoder == NULL)
+    {
+        ShowMessages("[-] core %u: cannot allocate packet decoder\n", Cpu);
+        return 0;
+    }
+
+    for (;;)
+    {
+        Status = pt_pkt_sync_forward(Decoder);
+        if (Status < 0)
+            break;
+
+        for (;;)
+        {
+            struct pt_packet Packet;
+
+            Status = pt_pkt_next(Decoder, &Packet, sizeof(Packet));
+            if (Status < 0)
+                break;
+
+            Count++;
+
+            switch (Packet.type)
+            {
+            case ppt_tnt_8:
+            case ppt_tnt_64:
+                ShowMessages("    %-8s %2u  ", CommandPtPacketName(Packet.type), Packet.payload.tnt.bit_size);
+                for (UINT8 Bit = 0; Bit < Packet.payload.tnt.bit_size && Bit < 64; Bit++)
+                    putchar(((Packet.payload.tnt.payload >> (Packet.payload.tnt.bit_size - 1 - Bit)) & 1) ? 'T' : 'N');
+                putchar('\n');
+                break;
+
+            case ppt_tip:
+            case ppt_fup:
+            case ppt_tip_pge:
+            case ppt_tip_pgd:
+                if (Packet.payload.ip.ipc == pt_ipc_suppressed)
+                    ShowMessages("    %-8s (ip suppressed)\n", CommandPtPacketName(Packet.type));
+                else
+                {
+                    UINT64 Ip = CommandPtReconstructIp(&Packet.payload.ip, &LastIp);
+                    ShowMessages("    %-8s 0x%016llx  exe+0x%llx\n",
+                                 CommandPtPacketName(Packet.type),
+                                 (UINT64)Ip,
+                                 (UINT64)(Ip - ImageBase));
+                }
+                break;
+
+            case ppt_pip:
+                ShowMessages("    %-8s cr3=0x%llx\n", CommandPtPacketName(Packet.type), (UINT64)Packet.payload.pip.cr3);
+                break;
+
+            case ppt_cbr:
+                // ShowMessages("    %-8s ratio=%u\n", CommandPtPacketName(Packet.type), Packet.payload.cbr.ratio);
+                break;
+
+            case ppt_tsc:
+                ShowMessages("    %-8s tsc=0x%llx\n", CommandPtPacketName(Packet.type), (UINT64)Packet.payload.tsc.tsc);
+                break;
+
+            default:
+                // ShowMessages("    %-8s\n", CommandPtPacketName(Packet.type));
+                break;
+            }
+        }
+    }
+
+    pt_pkt_free_decoder(Decoder);
+    return Count;
+}
+
+static UINT64
+CommandPtDecodeCore(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size, IMAGE_SYMBOL_CONTEXT * Ctx)
+{
+    struct pt_config         Config;
+    struct pt_insn_decoder * Decoder;
+    struct pt_image *        Image;
+    UINT64                   Count = 0;
+    int                      Status;
+
+    pt_config_init(&Config);
+    Config.begin = (UINT8 *)Buffer;
+    Config.end   = (UINT8 *)Buffer + Size;
+
+    Decoder = pt_insn_alloc_decoder(&Config);
+    if (Decoder == NULL)
+    {
+        ShowMessages("[-] core %u: cannot allocate instruction decoder\n", Cpu);
+        return 0;
+    }
+
+    Image = pt_insn_get_image(Decoder);
+    pt_image_set_callback(Image, CommandPtReadImage, Ctx);
+
+    for (;;)
+    {
+        Status = pt_insn_sync_forward(Decoder);
+        if (Status < 0)
+            break;
+
+        for (;;)
+        {
+            struct pt_insn Insn;
+
+            while (Status & pts_event_pending)
+            {
+                struct pt_event Event;
+                Status = pt_insn_event(Decoder, &Event, sizeof(Event));
+                if (Status < 0)
+                    break;
+            }
+
+            if (Status < 0 || (Status & pts_eos))
+                break;
+
+            Status = pt_insn_next(Decoder, &Insn, sizeof(Insn));
+            if (Status < 0)
+                break;
+
+            ZydisDisassembledInstruction Disasm;
+            ZydisMachineMode             Mode = (Insn.mode == ptem_32bit) ? ZYDIS_MACHINE_MODE_LEGACY_32 : ZYDIS_MACHINE_MODE_LONG_64;
+
+            if (ZYAN_SUCCESS(ZydisDisassembleIntel(Mode, Insn.ip, Insn.raw, Insn.size, &Disasm)))
+                ShowMessages("    0x%016llx  exe+0x%-6llx  %s\n",
+                             (UINT64)Insn.ip,
+                             (UINT64)(Insn.ip - Ctx->ImageBase),
+                             Disasm.text);
+            else
+                ShowMessages("    0x%016llx  (undecodable)\n", (UINT64)Insn.ip);
+
+            Count++;
+        }
+
+        if (Status >= 0 && (Status & pts_eos))
+            break;
+    }
+
+    pt_insn_free_decoder(Decoder);
+    return Count;
+}
+
+static VOID
+CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, int PinCore)
+{
+    STARTUPINFOA                    Startup     = {};
+    PROCESS_INFORMATION             Process     = {};
+    HYPERTRACE_PT_MMAP_PACKETS      Mmap        = {};
+    HYPERTRACE_PT_OPERATION_PACKETS Sizes       = {};
+    IMAGE_SYMBOL_CONTEXT                Ctx         = {};
+    UINT64                          TextStart   = 0;
+    UINT64                          TextEnd     = 0;
+    UINT64                          FilterStart = 0;
+    UINT64                          FilterEnd   = 0;
+    UINT64                          Total       = 0;
+
+    Startup.cb = sizeof(Startup);
+
+    if (!CreateProcessA(Path, NULL, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &Startup, &Process))
+    {
+        ShowMessages("[-] cannot launch '%s' (error 0x%x)\n", Path, GetLastError());
+        return;
+    }
+
+    ShowMessages("[+] launched '%s' (pid %u, suspended)\n", Path, Process.dwProcessId);
+
+    if (PinCore >= 0)
+    {
+        DWORD_PTR Mask = (DWORD_PTR)1 << PinCore;
+        if (SetProcessAffinityMask(Process.hProcess, Mask))
+            ShowMessages("[+] pinned target to core %d (all trace should land on this core)\n", PinCore);
+        else
+            ShowMessages("[!] could not pin to core %d (error 0x%x); running unpinned\n", PinCore, GetLastError());
+    }
+    else
+    {
+        ShowMessages("[*] target unpinned (scheduler may migrate it across cores)\n");
+    }
+
+    if (!CommandPtCaptureImage(Process.hProcess, &TextStart, &TextEnd, &Ctx))
+    {
+        ShowMessages("[-] cannot read target image / .text section\n");
+        TerminateProcess(Process.hProcess, 1);
+        goto Cleanup;
+    }
+
+    ShowMessages("[+] image base 0x%llx, .text 0x%llx-0x%llx (%llu bytes)\n",
+                 (UINT64)Ctx.ImageBase,
+                 (UINT64)TextStart,
+                 (UINT64)TextEnd,
+                 (UINT64)Ctx.CodeSize);
+
+    FilterStart = TextStart;
+    FilterEnd   = TextEnd;
+
+    if (Function != NULL && CommandPtResolveFunction(Process.hProcess, Path, Function, Ctx.ImageBase, &FilterStart, &FilterEnd))
+    {
+        ShowMessages("[+] IP filter narrowed to '%s' 0x%llx-0x%llx (%llu bytes)\n",
+                     Function,
+                     (UINT64)FilterStart,
+                     (UINT64)FilterEnd,
+                     (UINT64)(FilterEnd - FilterStart + 1));
+    }
+    else
+    {
+        ShowMessages("[!] IP filter: whole .text (symbol '%s' not found - build the target with a PDB)\n",
+                     Function ? Function : "(none)");
+    }
+
+    if (!CommandPtSendFilterByPid(Process.dwProcessId, TRUE, FALSE, FilterStart, FilterEnd, NULL, NULL, NULL, NULL, NULL, NULL) ||
+        !CommandPtSendEnable())
+    {
+        ShowMessages("[-] cannot enable Intel PT\n");
+        TerminateProcess(Process.hProcess, 1);
+        goto Cleanup;
+    }
+
+    if (!hyperdbg_u_pt_mmap(&Mmap))
+    {
+        ShowMessages("[-] pt_mmap failed\n");
+        CommandPtSendDisable();
+        TerminateProcess(Process.hProcess, 1);
+        goto Cleanup;
+    }
+
+    ShowMessages("[+] PT enabled, %u per-core buffers mapped\n", Mmap.NumCpus);
+    ShowMessages("[*] resuming target and waiting for it to exit...\n");
+
+    ResumeThread(Process.hThread);
+    WaitForSingleObject(Process.hProcess, INFINITE);
+    ShowMessages("[+] target exited, decoding trace\n");
+
+    CommandPtSendPause();
+
+    Sizes.PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_SIZE;
+    if (!hyperdbg_u_pt_operation(&Sizes))
+    {
+        ShowMessages("[-] cannot query PT sizes\n");
+        CommandPtSendDisable();
+
+        goto Cleanup;
+    }
+
+    for (UINT32 i = 0; i < Mmap.NumCpus; i++)
+    {
+        UINT32 Cpu   = Mmap.Cpus[i].CpuId;
+        UINT64 Bytes = (Cpu < Sizes.NumCpus) ? Sizes.BytesPerCpu[Cpu] : 0;
+
+        if (Bytes == 0)
+            continue;
+
+        if (Bytes > Mmap.Cpus[i].Size)
+            Bytes = Mmap.Cpus[i].Size;
+
+        ShowMessages("\n[*] core %u: %llu bytes of trace\n", Cpu, (UINT64)Bytes);
+        Total += Packets
+                     ? CommandPtDecodeCorePackets(Cpu, (const UINT8 *)(ULONG_PTR)Mmap.Cpus[i].UserVa, Bytes, Ctx.ImageBase)
+                     : CommandPtDecodeCore(Cpu, (const UINT8 *)(ULONG_PTR)Mmap.Cpus[i].UserVa, Bytes, &Ctx);
+    }
+
+    ShowMessages("\n[+] decoded %llu %s total\n", (UINT64)Total, Packets ? "packet(s)" : "instruction(s)");
+
+    CommandPtSendDisable();
+
+Cleanup:
+    if (Ctx.Code != NULL)
+    {
+        free(Ctx.Code);
+        Ctx.Code = NULL;
+    }
+    if (Process.hThread != NULL)
+        CloseHandle(Process.hThread);
+    if (Process.hProcess != NULL)
+        CloseHandle(Process.hProcess);
+}
+
+/**
  * @brief Map the per-CPU PT output buffers into the current process
  *
  * @details On success MmapRequest->Cpus[0..NumCpus) hold one { UserVa, Size }
@@ -204,82 +948,6 @@ HyperDbgPtMmapSendRequest(HYPERTRACE_PT_MMAP_PACKETS * MmapRequest)
 }
 
 /**
- * @brief Parse options for pt disable command
- *
- * @param CommandTokens The command tokens to parse
- * @param PtRequest The PT request structure to fill with parsed options
- *
- * @return VOID
- */
-static VOID
-CommandPtParseDisable(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATION_PACKETS * PtRequest)
-{
-    ShowMessages("PT disable requested\n");
-
-    //
-    // Set the PtRequest structure for disable operation
-    //
-    PtRequest->PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_DISABLE;
-}
-
-/**
- * @brief Parse options for pt disable command
- *
- * @param CommandTokens The command tokens to parse
- * @param PtRequest The PT request structure to fill with parsed options
- *
- * @return VOID
- */
-static VOID
-CommandPtParsePause(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATION_PACKETS * PtRequest)
-{
-    ShowMessages("PT pause requested\n");
-
-    //
-    // Set the PtRequest structure for pause operation
-    //
-    PtRequest->PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_PAUSE;
-}
-
-/**
- * @brief Parse options for pt disable command
- *
- * @param CommandTokens The command tokens to parse
- * @param PtRequest The PT request structure to fill with parsed options
- *
- * @return VOID
- */
-static VOID
-CommandPtParseResume(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATION_PACKETS * PtRequest)
-{
-    ShowMessages("PT resume requested\n");
-
-    //
-    // Set the PtRequest structure for resume operation
-    //
-    PtRequest->PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_RESUME;
-}
-
-/**
- * @brief Parse options for pt disable command
- *
- * @param CommandTokens The command tokens to parse
- * @param PtRequest The PT request structure to fill with parsed options
- *
- * @return VOID
- */
-static VOID
-CommandPtParseFlush(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATION_PACKETS * PtRequest)
-{
-    ShowMessages("PT flush requested\n");
-
-    //
-    // Set the PtRequest structure for flush operation
-    //
-    PtRequest->PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_FLUSH;
-}
-
-/**
  * @brief Parse and display enable options for !pt enable command
  *
  * @param CommandTokens The command tokens to parse
@@ -292,16 +960,20 @@ CommandPtParseEnable(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
 {
     BOOLEAN HasPid   = FALSE;
     BOOLEAN HasPname = FALSE;
+    BOOLEAN HasPath  = FALSE;
     BOOLEAN HasTid   = FALSE;
     BOOLEAN HasCr3   = FALSE;
     BOOLEAN HasSize  = FALSE;
+    BOOLEAN HasCore  = FALSE;
     UINT64  Pid      = 0;
     UINT64  Tid      = 0;
     UINT64  Cr3      = 0;
     UINT64  Size     = 0;
+    UINT32  Core     = 0;
     string  Pname;
+    string  Path;
 
-    for (size_t i = 2; i < CommandTokens.size(); i++)
+    for (SIZE_T i = 2; i < CommandTokens.size(); i++)
     {
         if (CompareLowerCaseStrings(CommandTokens.at(i), "pid"))
         {
@@ -332,6 +1004,18 @@ CommandPtParseEnable(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
             i++;
             Pname    = GetCaseSensitiveStringFromCommandToken(CommandTokens.at(i));
             HasPname = TRUE;
+        }
+        else if (CompareLowerCaseStrings(CommandTokens.at(i), "path"))
+        {
+            if (i + 1 >= CommandTokens.size())
+            {
+                ShowMessages("err, 'path' expects a process executable path\n\n");
+                CommandPtHelp();
+                return;
+            }
+            i++;
+            Path    = GetCaseSensitiveStringFromCommandToken(CommandTokens.at(i));
+            HasPath = TRUE;
         }
         else if (CompareLowerCaseStrings(CommandTokens.at(i), "tid"))
         {
@@ -387,6 +1071,24 @@ CommandPtParseEnable(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
             }
             HasSize = TRUE;
         }
+        else if (CompareLowerCaseStrings(CommandTokens.at(i), "core"))
+        {
+            if (i + 1 >= CommandTokens.size())
+            {
+                ShowMessages("err, 'core' expects a hex value as the core number\n\n");
+                CommandPtHelp();
+                return;
+            }
+            i++;
+            if (!ConvertTokenToUInt32(CommandTokens.at(i), &Core))
+            {
+                ShowMessages("err, '%s' is not a valid hex size\n\n",
+                             GetCaseSensitiveStringFromCommandToken(CommandTokens.at(i)).c_str());
+                CommandPtHelp();
+                return;
+            }
+            HasCore = TRUE;
+        }
         else
         {
             ShowMessages("err, unknown 'enable' option '%s'\n\n",
@@ -399,10 +1101,10 @@ CommandPtParseEnable(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
     //
     // pid, pname, tid, cr3 are mutually exclusive target selectors
     //
-    INT32 SelectorCount = (HasPid ? 1 : 0) + (HasPname ? 1 : 0) + (HasTid ? 1 : 0) + (HasCr3 ? 1 : 0);
+    INT32 SelectorCount = (HasPid ? 1 : 0) + (HasPname ? 1 : 0) + (HasPath ? 1 : 0) + (HasTid ? 1 : 0) + (HasCr3 ? 1 : 0);
     if (SelectorCount > 1)
     {
-        ShowMessages("err, only one of 'pid', 'pname', 'tid', 'cr3' may be specified at a time\n\n");
+        ShowMessages("err, only one of 'pid', 'pname', 'path', 'tid', 'cr3' may be specified at a time\n\n");
         CommandPtHelp();
         return;
     }
@@ -426,6 +1128,12 @@ CommandPtParseEnable(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
         PtRequest->EnableOptions.EnableByCr3 = 1;
         strcpy_s(PtRequest->EnableOptions.ProcessName, sizeof(PtRequest->EnableOptions.ProcessName), Pname.c_str());
     }
+    else if (HasPath)
+    {
+        ShowMessages("  target path : %s\n", Path.c_str());
+
+        PtRequest->EnableOptions.EnableByPid = 1; // Path is resolved to a PID
+    }
     else if (HasTid)
     {
         ShowMessages("  target tid   : 0x%llx\n", Tid);
@@ -445,6 +1153,9 @@ CommandPtParseEnable(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
         ShowMessages("  target       : all (no process/thread filter)\n");
     }
 
+    //
+    // Check for size options
+    //
     if (HasSize)
     {
         ShowMessages("  buffer size  : 0x%llx bytes\n", Size);
@@ -459,9 +1170,33 @@ CommandPtParseEnable(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
     }
 
     //
+    // Check for core options
+    //
+    if (HasCore)
+    {
+        ShowMessages("  core         : 0x%x\n", Core);
+        PtRequest->CoreId = Core;
+    }
+    else
+    {
+        ShowMessages("  core         : default (0x%x)\n", PT_DEFAULT_PINNING_CORE);
+        PtRequest->CoreId = PT_DEFAULT_PINNING_CORE;
+    }
+
+    //
     // Fill the PtRequest structure with parsed options
     //
     PtRequest->PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_ENABLE;
+
+    //
+    // Temporary workaround for testing , if a path is specified, resolve it to a PID and use that for the request
+    // TODO: Should be removed
+    //
+    if (HasPath)
+    {
+        ShowMessages("  Running '%s' on core: %llx\n", Path.c_str(), PtRequest->CoreId);
+        CommandPtRunAndTrace(Path.c_str(), NULL, FALSE, PtRequest->CoreId);
+    }
 }
 
 /**
@@ -569,7 +1304,7 @@ CommandPtParseFilter(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
     BOOLEAN      TraceUser     = FALSE;
     BOOLEAN      TraceKernel   = FALSE;
 
-    for (size_t i = 2; i < CommandTokens.size(); i++)
+    for (SIZE_T i = 2; i < CommandTokens.size(); i++)
     {
         if (CompareLowerCaseStrings(CommandTokens.at(i), "user"))
         {
@@ -791,7 +1526,7 @@ CommandPtParsePacket(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
     BOOLEAN PktFup  = FALSE;
     BOOLEAN PktMode = FALSE;
 
-    for (size_t i = 2; i < CommandTokens.size(); i++)
+    for (SIZE_T i = 2; i < CommandTokens.size(); i++)
     {
         if (CompareLowerCaseStrings(CommandTokens.at(i), "psb"))
             PktPsb = TRUE;
@@ -929,7 +1664,7 @@ CommandPt(vector<CommandToken> CommandTokens, string Command)
         //
         // Parse and display disable options for !pt disable command
         //
-        CommandPtParseDisable(CommandTokens, &PtRequest);
+        CommandPtSendDisable();
     }
     else if (CompareLowerCaseStrings(CommandTokens.at(1), "pause"))
     {
@@ -943,7 +1678,7 @@ CommandPt(vector<CommandToken> CommandTokens, string Command)
         //
         // Parse and display pause options for !pt pause command
         //
-        CommandPtParsePause(CommandTokens, &PtRequest);
+        CommandPtSendPause();
     }
     else if (CompareLowerCaseStrings(CommandTokens.at(1), "resume"))
     {
@@ -957,7 +1692,7 @@ CommandPt(vector<CommandToken> CommandTokens, string Command)
         //
         // Parse and display resume options for !pt resume command
         //
-        CommandPtParseResume(CommandTokens, &PtRequest);
+        CommandPtSendResume();
     }
     else if (CompareLowerCaseStrings(CommandTokens.at(1), "flush"))
     {
@@ -971,7 +1706,7 @@ CommandPt(vector<CommandToken> CommandTokens, string Command)
         //
         // Parse and display flush options for !pt flush command
         //
-        CommandPtParseFlush(CommandTokens, &PtRequest);
+        CommandPtSendFlush();
     }
     else if (CompareLowerCaseStrings(CommandTokens.at(1), "dump"))
     {

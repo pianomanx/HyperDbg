@@ -1370,6 +1370,12 @@ typedef enum _HYPERTRACE_PT_OPERATION_REQUEST_TYPE
 #define PT_DEFAULT_BUFFER_SIZE 0x200000 // 2 MB
 
 /**
+ * @brief The default core for PT
+ *
+ */
+#define PT_DEFAULT_PINNING_CORE 0x0 // 0th core
+
+/**
  * @brief PT enable options structure
  *
  */
@@ -1433,6 +1439,7 @@ typedef struct _HYPERTRACE_PT_OPERATION_PACKETS
     //
     UINT64            BufferSize;    /* Output buffer size (0 = default / PT_DEFAULT_BUFFER_SIZE)  */
     PT_ENABLE_OPTIONS EnableOptions; /* Options for enabling PT (CPL, CR3, PID, TID, Pname) */
+    UINT32            CoreId;        /* Core ID for running (pinning) process/thread */
 
     //
     // Filter
