@@ -18,10 +18,7 @@
 extern BOOLEAN g_IsHyperTraceModuleLoaded;
 extern BOOLEAN g_IsSerialConnectedToRemoteDebuggee;
 
-static UINT64  g_ImageBase = 0;
-static UINT64  g_CodeBase  = 0;
-static UINT64  g_CodeSize  = 0;
-static UINT8 * g_Code      = NULL;
+
 
 /**
  * @brief help of the !pt command
@@ -410,15 +407,16 @@ static int
 CommandPtReadImage(UINT8 * Buffer, SIZE_T Size, const struct pt_asid * Asid, UINT64 Ip, VOID * Context)
 {
     (VOID) Asid;
-    (VOID) Context;
 
-    if (g_Code == NULL || Ip < g_CodeBase || Ip >= g_CodeBase + g_CodeSize)
+    IMAGE_SYMBOL_CONTEXT * Ctx = (IMAGE_SYMBOL_CONTEXT *)Context;
+
+    if (Ctx == NULL || Ctx->Code == NULL || Ip < Ctx->CodeBase || Ip >= Ctx->CodeBase + Ctx->CodeSize)
         return -pte_nomap;
 
-    UINT64 Available = g_CodeBase + g_CodeSize - Ip;
+    UINT64 Available = Ctx->CodeBase + Ctx->CodeSize - Ip;
     SIZE_T Count     = (Size < Available) ? Size : (SIZE_T)Available;
 
-    memcpy(Buffer, g_Code + (Ip - g_CodeBase), Count);
+    memcpy(Buffer, Ctx->Code + (Ip - Ctx->CodeBase), Count);
     return (int)Count;
 }
 
@@ -432,7 +430,7 @@ typedef struct _PROC_BASIC_INFO
 typedef LONG(NTAPI * PFN_NT_QIP)(HANDLE, ULONG, PVOID, ULONG, PULONG);
 
 static BOOLEAN
-CommandPtCaptureImage(HANDLE Process, UINT64 * TextStart, UINT64 * TextEnd)
+CommandPtCaptureImage(HANDLE Process, UINT64 * TextStart, UINT64 * TextEnd, IMAGE_SYMBOL_CONTEXT * Ctx)
 {
     HMODULE            Ntdll = GetModuleHandleA("ntdll.dll");
     PFN_NT_QIP         NtQip = Ntdll ? (PFN_NT_QIP)GetProcAddress(Ntdll, "NtQueryInformationProcess") : NULL;
@@ -456,8 +454,8 @@ CommandPtCaptureImage(HANDLE Process, UINT64 * TextStart, UINT64 * TextEnd)
     if (!ReadProcessMemory(Process, (PBYTE)Base + Dos.e_lfanew, &Nt, sizeof(Nt), &Got) || Nt.Signature != IMAGE_NT_SIGNATURE)
         return FALSE;
 
-    g_ImageBase = Base;
-    SectionBase = Base + Dos.e_lfanew + FIELD_OFFSET(IMAGE_NT_HEADERS64, OptionalHeader) + Nt.FileHeader.SizeOfOptionalHeader;
+    Ctx->ImageBase = Base;
+    SectionBase    = Base + Dos.e_lfanew + FIELD_OFFSET(IMAGE_NT_HEADERS64, OptionalHeader) + Nt.FileHeader.SizeOfOptionalHeader;
 
     for (WORD i = 0; i < Nt.FileHeader.NumberOfSections; i++)
     {
@@ -475,21 +473,21 @@ CommandPtCaptureImage(HANDLE Process, UINT64 * TextStart, UINT64 * TextEnd)
         if (Size == 0)
             return FALSE;
 
-        g_Code = (UINT8 *)malloc((SIZE_T)Size);
-        if (g_Code == NULL)
+        Ctx->Code = (UINT8 *)malloc((SIZE_T)Size);
+        if (Ctx->Code == NULL)
             return FALSE;
 
-        if (!ReadProcessMemory(Process, (PVOID)Start, g_Code, (SIZE_T)Size, &Got) || Got != Size)
+        if (!ReadProcessMemory(Process, (PVOID)Start, Ctx->Code, (SIZE_T)Size, &Got) || Got != Size)
         {
-            free(g_Code);
-            g_Code = NULL;
+            free(Ctx->Code);
+            Ctx->Code = NULL;
             return FALSE;
         }
 
-        g_CodeBase = Start;
-        g_CodeSize = Size;
-        *TextStart = Start;
-        *TextEnd   = Start + Size - 1;
+        Ctx->CodeBase = Start;
+        Ctx->CodeSize = Size;
+        *TextStart    = Start;
+        *TextEnd      = Start + Size - 1;
         return TRUE;
     }
 
@@ -497,7 +495,7 @@ CommandPtCaptureImage(HANDLE Process, UINT64 * TextStart, UINT64 * TextEnd)
 }
 
 static BOOLEAN
-CommandPtResolveFunction(HANDLE Process, const CHAR * Path, const CHAR * Name, UINT64 * Start, UINT64 * End)
+CommandPtResolveFunction(HANDLE Process, const CHAR * Path, const CHAR * Name, UINT64 ImageBase, UINT64 * Start, UINT64 * End)
 {
     union
     {
@@ -510,7 +508,7 @@ CommandPtResolveFunction(HANDLE Process, const CHAR * Path, const CHAR * Name, U
     if (!SymInitialize(Process, NULL, FALSE))
         return FALSE;
 
-    if (SymLoadModuleEx(Process, NULL, Path, NULL, (DWORD64)g_ImageBase, 0, NULL, 0) != 0)
+    if (SymLoadModuleEx(Process, NULL, Path, NULL, (DWORD64)ImageBase, 0, NULL, 0) != 0)
     {
         Symbol.Info.SizeOfStruct = sizeof(SYMBOL_INFO);
         Symbol.Info.MaxNameLen   = MAX_SYM_NAME;
@@ -612,7 +610,7 @@ CommandPtReconstructIp(const struct pt_packet_ip * Packet, UINT64 * LastIp)
 }
 
 static UINT64
-CommandPtDecodeCorePackets(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size)
+CommandPtDecodeCorePackets(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size, UINT64 ImageBase)
 {
     struct pt_config           Config;
     struct pt_packet_decoder * Decoder;
@@ -669,7 +667,7 @@ CommandPtDecodeCorePackets(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size)
                     ShowMessages("    %-8s 0x%016llx  exe+0x%llx\n",
                                  CommandPtPacketName(Packet.type),
                                  (UINT64)Ip,
-                                 (UINT64)(Ip - g_ImageBase));
+                                 (UINT64)(Ip - ImageBase));
                 }
                 break;
 
@@ -697,7 +695,7 @@ CommandPtDecodeCorePackets(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size)
 }
 
 static UINT64
-CommandPtDecodeCore(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size)
+CommandPtDecodeCore(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size, IMAGE_SYMBOL_CONTEXT * Ctx)
 {
     struct pt_config         Config;
     struct pt_insn_decoder * Decoder;
@@ -717,7 +715,7 @@ CommandPtDecodeCore(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size)
     }
 
     Image = pt_insn_get_image(Decoder);
-    pt_image_set_callback(Image, CommandPtReadImage, NULL);
+    pt_image_set_callback(Image, CommandPtReadImage, Ctx);
 
     for (;;)
     {
@@ -750,7 +748,7 @@ CommandPtDecodeCore(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size)
             if (ZYAN_SUCCESS(ZydisDisassembleIntel(Mode, Insn.ip, Insn.raw, Insn.size, &Disasm)))
                 ShowMessages("    0x%016llx  exe+0x%-6llx  %s\n",
                              (UINT64)Insn.ip,
-                             (UINT64)(Insn.ip - g_ImageBase),
+                             (UINT64)(Insn.ip - Ctx->ImageBase),
                              Disasm.text);
             else
                 ShowMessages("    0x%016llx  (undecodable)\n", (UINT64)Insn.ip);
@@ -773,6 +771,7 @@ CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, 
     PROCESS_INFORMATION             Process     = {};
     HYPERTRACE_PT_MMAP_PACKETS      Mmap        = {};
     HYPERTRACE_PT_OPERATION_PACKETS Sizes       = {};
+    IMAGE_SYMBOL_CONTEXT                Ctx         = {};
     UINT64                          TextStart   = 0;
     UINT64                          TextEnd     = 0;
     UINT64                          FilterStart = 0;
@@ -802,7 +801,7 @@ CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, 
         ShowMessages("[*] target unpinned (scheduler may migrate it across cores)\n");
     }
 
-    if (!CommandPtCaptureImage(Process.hProcess, &TextStart, &TextEnd))
+    if (!CommandPtCaptureImage(Process.hProcess, &TextStart, &TextEnd, &Ctx))
     {
         ShowMessages("[-] cannot read target image / .text section\n");
         TerminateProcess(Process.hProcess, 1);
@@ -810,15 +809,15 @@ CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, 
     }
 
     ShowMessages("[+] image base 0x%llx, .text 0x%llx-0x%llx (%llu bytes)\n",
-                 (UINT64)g_ImageBase,
+                 (UINT64)Ctx.ImageBase,
                  (UINT64)TextStart,
                  (UINT64)TextEnd,
-                 (UINT64)g_CodeSize);
+                 (UINT64)Ctx.CodeSize);
 
     FilterStart = TextStart;
     FilterEnd   = TextEnd;
 
-    if (Function != NULL && CommandPtResolveFunction(Process.hProcess, Path, Function, &FilterStart, &FilterEnd))
+    if (Function != NULL && CommandPtResolveFunction(Process.hProcess, Path, Function, Ctx.ImageBase, &FilterStart, &FilterEnd))
     {
         ShowMessages("[+] IP filter narrowed to '%s' 0x%llx-0x%llx (%llu bytes)\n",
                      Function,
@@ -879,8 +878,8 @@ CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, 
 
         ShowMessages("\n[*] core %u: %llu bytes of trace\n", Cpu, (UINT64)Bytes);
         Total += Packets
-                     ? CommandPtDecodeCorePackets(Cpu, (const UINT8 *)(ULONG_PTR)Mmap.Cpus[i].UserVa, Bytes)
-                     : CommandPtDecodeCore(Cpu, (const UINT8 *)(ULONG_PTR)Mmap.Cpus[i].UserVa, Bytes);
+                     ? CommandPtDecodeCorePackets(Cpu, (const UINT8 *)(ULONG_PTR)Mmap.Cpus[i].UserVa, Bytes, Ctx.ImageBase)
+                     : CommandPtDecodeCore(Cpu, (const UINT8 *)(ULONG_PTR)Mmap.Cpus[i].UserVa, Bytes, &Ctx);
     }
 
     ShowMessages("\n[+] decoded %llu %s total\n", (UINT64)Total, Packets ? "packet(s)" : "instruction(s)");
@@ -888,10 +887,10 @@ CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, 
     CommandPtSendDisable();
 
 Cleanup:
-    if (g_Code != NULL)
+    if (Ctx.Code != NULL)
     {
-        free(g_Code);
-        g_Code = NULL;
+        free(Ctx.Code);
+        Ctx.Code = NULL;
     }
     if (Process.hThread != NULL)
         CloseHandle(Process.hThread);
