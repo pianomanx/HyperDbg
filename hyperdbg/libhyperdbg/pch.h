@@ -41,30 +41,29 @@ typedef RFLAGS * PRFLAGS;
 #define USE_NATIVE_SDK_HEADERS
 #define _AMD64_
 
-
 #ifdef _WIN32
-#if defined(USE__NATIVE_PHNT_HEADERS)
+#    if defined(USE__NATIVE_PHNT_HEADERS)
 
 //
 // Dirty fix: the "PCWCHAR" in undefined in "ntrtl.h" so I deifined it here.
 //
 typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 
-#    define PHNT_MODE               PHNT_MODE_USER
-#    define PHNT_VERSION            PHNT_WIN11 // Windows 11
-#    define PHNT_PATCH_FOR_HYPERDBG TRUE
+#        define PHNT_MODE               PHNT_MODE_USER
+#        define PHNT_VERSION            PHNT_WIN11 // Windows 11
+#        define PHNT_PATCH_FOR_HYPERDBG TRUE
 
-#    include <phnt/phnt_windows.h>
-#    include <phnt/phnt.h>
+#        include <phnt/phnt_windows.h>
+#        include <phnt/phnt.h>
 
-#elif defined(USE_NATIVE_SDK_HEADERS)
+#    elif defined(USE_NATIVE_SDK_HEADERS)
 
-#    include <winternl.h>
-#    include <Windows.h>
-#    include <winioctl.h>
-#    include <platform/user/header/Windows.h>
+#        include <winternl.h>
+#        include <Windows.h>
+#        include <winioctl.h>
+#        include <platform/user/header/Windows.h>
 
-#endif
+#    endif
 
 #endif //_WIN32
 
@@ -108,6 +107,7 @@ typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 #include <cstring>
 #include <unordered_set>
 #include <regex>
+#include <dbghelp.h>
 
 //
 // Scope definitions
@@ -190,6 +190,11 @@ typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 #include "header/pci-id.h"
 
 //
+// Intel PT
+//
+#include "../dependencies/libipt/intel-pt.h"
+
+//
 // General
 //
 #include "header/libhyperdbg.h"
@@ -233,6 +238,11 @@ typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 #include "header/hwdbg-scripts.h"
 
 //
+// Zydis headers
+//
+#include <Zydis/Zydis.h>
+
+//
 // Libraries
 //
 
@@ -260,5 +270,10 @@ typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 //
 #    pragma comment(lib, "Psapi.lib")
 #    pragma comment(lib, "Kernel32.lib")
+
+//
+// For resolving symbols on Intel PT
+//
+#    pragma comment(lib, "dbghelp.lib")
 
 #endif // HYPERDBG_ENV_WINDOWS
