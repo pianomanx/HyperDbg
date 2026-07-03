@@ -275,6 +275,9 @@
     <ClInclude Include="header\debugger\script-engine\symbol.h">
       <Filter>header\debugger\script-engine</Filter>
     </ClInclude>
+    <ClInclude Include="header\debugger\misc\pt-helper.h">
+      <Filter>header\debugger\misc</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -729,6 +732,9 @@
     </ClCompile>
     <ClCompile Include="..\include\components\pe\code\pe-image-reader.cpp">
       <Filter>code\components\pe</Filter>
+    </ClCompile>
+    <ClCompile Include="code\debugger\misc\pt-helper.cpp">
+      <Filter>code\debugger\misc</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

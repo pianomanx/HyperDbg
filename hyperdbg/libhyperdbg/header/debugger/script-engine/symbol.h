@@ -38,6 +38,41 @@ typedef struct _IMAGE_SYMBOL_CONTEXT
     UINT8 * Code;
 } IMAGE_SYMBOL_CONTEXT;
 
+/*
+ * @brief Process basic information structure
+ */
+typedef struct _PROC_BASIC_INFO
+{
+    LONG      ExitStatus;
+    PVOID     PebBaseAddress;
+    ULONG_PTR Reserved[4];
+} PROC_BASIC_INFO;
+
+/**
+ * @brief Thread basic information
+ *
+ */
+typedef struct _THREAD_BASIC_INFO_EX
+{
+    LONG  ExitStatus;
+    PVOID TebBaseAddress;
+    struct
+    {
+        HANDLE UniqueProcess;
+        HANDLE UniqueThread;
+    } ClientId;
+    ULONG_PTR AffinityMask;
+    LONG      Priority;
+    LONG      BasePriority;
+} THREAD_BASIC_INFO_EX;
+
+//////////////////////////////////////////////////
+//		       Function Defs                    //
+//////////////////////////////////////////////////
+
+typedef LONG(NTAPI * PFN_NT_QIP)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+typedef LONG(NTAPI * PFN_NT_QIT)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+
 //////////////////////////////////////////////////
 //			    	    Pdbex                   //
 //////////////////////////////////////////////////

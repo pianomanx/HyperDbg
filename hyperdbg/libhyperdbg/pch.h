@@ -203,6 +203,7 @@ typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 #include "header/debugger/commands/commands.h"
 #include "header/common/common.h"
 #include "header/debugger/script-engine/symbol.h"
+#include "header/debugger/misc/pt-helper.h"
 #include "header/debugger/core/debugger.h"
 #include "header/debugger/script-engine/script-engine.h"
 #include "header/debugger/commands/help.h"
