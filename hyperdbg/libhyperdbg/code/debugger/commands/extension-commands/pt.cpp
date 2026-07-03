@@ -437,6 +437,7 @@ CommandPtRunAndTraceCore(PROCESS_INFORMATION * Process,
     UINT64                          FilterStart = 0;
     UINT64                          FilterEnd   = 0;
     UINT64                          Total       = 0;
+
     if (PinCore < 0)
     {
         PinCore = PT_DEFAULT_PINNING_CORE;
@@ -444,16 +445,28 @@ CommandPtRunAndTraceCore(PROCESS_INFORMATION * Process,
 
     Mask = (DWORD_PTR)1 << PinCore;
 
+    //
+    // Set process affinity to the specified core so that all PT trace will land on that core
+    //
     if (SetProcessAffinityMask(Process->hProcess, Mask))
+    {
         ShowMessages("[+] pinned target to core %d (all trace should land on this core)\n", PinCore);
+    }
     else
+    {
         ShowMessages("[!] could not pin to core %d (error 0x%x); running unpinned\n", PinCore, GetLastError());
+    }
 
+    //
+    // Capture the .text section of the target process image for symbol resolution
+    //
     if (!PtHelperCaptureImage(Process->hProcess, &TextStart, &TextEnd, &Ctx))
     {
         ShowMessages("[-] cannot read target image / .text section\n");
+
         if (LaunchedNew)
             TerminateProcess(Process->hProcess, 1);
+
         goto Cleanup;
     }
 
@@ -466,6 +479,9 @@ CommandPtRunAndTraceCore(PROCESS_INFORMATION * Process,
     FilterStart = TextStart;
     FilterEnd   = TextEnd;
 
+    //
+    // Narrow the IP filter to the specified function if possible
+    //
     if (Function != NULL && Path != NULL &&
         PtHelperResolveFunction(Process->hProcess, Path, Function, Ctx.ImageBase, &FilterStart, &FilterEnd))
     {
@@ -481,18 +497,28 @@ CommandPtRunAndTraceCore(PROCESS_INFORMATION * Process,
                      Function ? Function : "(none)");
     }
 
+    //
+    // Enable PT with the specified filter and wait for the target process to exit
+    //
     if (!CommandPtSendFilterByPid(Process->dwProcessId, TRUE, FALSE, FilterStart, FilterEnd, NULL, NULL, NULL, NULL, NULL, NULL) ||
         !CommandPtSendEnable())
     {
         ShowMessages("[-] cannot enable Intel PT\n");
+
         if (LaunchedNew)
+        {
             TerminateProcess(Process->hProcess, 1);
+        }
+
         goto Cleanup;
     }
 
+    //
+    // Request the PT buffers to be mapped into user space so that we can decode them after the target exits
+    //
     if (!HyperDbgPtMmapSendRequest(&Mmap))
     {
-        ShowMessages("[-] pt_mmap failed\n");
+        ShowMessages("[-] MMAP failed\n");
         CommandPtSendDisable();
         if (LaunchedNew)
             TerminateProcess(Process->hProcess, 1);
@@ -511,13 +537,23 @@ CommandPtRunAndTraceCore(PROCESS_INFORMATION * Process,
         ShowMessages("[*] waiting for target process to exit...\n");
     }
 
+    //
+    // Wait for the target process to exit before decoding the trace
+    //
     WaitForSingleObject(Process->hProcess, INFINITE);
+
     ShowMessages("[+] target exited, decoding trace\n");
 
+    //
+    // Pause PT so that the buffers are not being written to while we decode them
+    //
     CommandPtSendPause();
 
     Sizes.PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_SIZE;
 
+    //
+    // Request the sizes of the PT buffers for each core so that we know how much to decode
+    //
     if (!CommandPtSendRequest(&Sizes))
     {
         ShowMessages("[-] cannot query PT sizes\n");
@@ -525,6 +561,9 @@ CommandPtRunAndTraceCore(PROCESS_INFORMATION * Process,
         goto Cleanup;
     }
 
+    //
+    // Decode the trace for each core that has a non-zero buffer size
+    //
     for (UINT32 i = 0; i < Mmap.NumCpus; i++)
     {
         UINT32 Cpu   = Mmap.Cpus[i].CpuId;
@@ -544,9 +583,13 @@ CommandPtRunAndTraceCore(PROCESS_INFORMATION * Process,
 
     ShowMessages("\n[+] decoded %llu %s total\n", (UINT64)Total, Packets ? "packet(s)" : "instruction(s)");
 
+    //
+    // Disable PT now that we are done decoding the trace
+    //
     CommandPtSendDisable();
 
 Cleanup:
+
     if (Ctx.Code != NULL)
     {
         free(Ctx.Code);
