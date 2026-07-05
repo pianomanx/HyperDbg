@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.21.0.0] - 2026-XX-XX
+## [0.21.0.0] - 2026-07-05
 New release of the HyperDbg Debugger.
 
 ### Added
@@ -12,6 +12,7 @@ New release of the HyperDbg Debugger.
 - The 'unload' command checks whether any module is loaded or not ([link](https://docs.hyperdbg.org/commands/debugging-commands/unload))
 - Exported SDK API for checking whether any module is loaded or not ([link](https://github.com/HyperDbg/HyperDbg/commit/19e47c804f50f5dbb698f314e66b7d685a87ac1f))
 - Added user mode and kernel mode PT parameter parser ([link](https://github.com/HyperDbg/HyperDbg/pull/631))
+- Added thread (TID) and process (PID) helper functions for Intel PT ([link](https://github.com/HyperDbg/HyperDbg/pull/633))
 
 ### Changed
 - Separated SDK libraries for user mode and kernel mode modules ([link](https://github.com/HyperDbg/HyperDbg/commit/c17ebc09c4d199a642352e66feebb3159582196c))
