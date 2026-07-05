@@ -596,6 +596,29 @@ HyperDbgUnloadKd()
 }
 
 /**
+ * @brief check if any module is loaded (KD, VMM, HyperTrace, etc.)
+ *
+ * @return BOOLEAN return TRUE if any module is loaded, otherwise return FALSE
+ */
+BOOLEAN
+HyperDbgIsAnyModuleLoaded()
+{
+    INT RetVal = 0;
+
+    //
+    // Check if any module is loaded (KD, VMM, HyperTrace, etc.)
+    //
+    if (g_IsKdModuleLoaded || g_IsVmmModuleLoaded || g_IsHyperTraceModuleLoaded)
+    {
+        return TRUE;
+    }
+    else
+    {
+        return FALSE;
+    }
+}
+
+/**
  * @brief unload all modules (KD, VMM, HyperTrace, etc.)
  *
  * @return INT return zero if it was successful or non-zero if there
@@ -654,6 +677,18 @@ HyperDbgLoadKdModule()
         return 0;
     }
 
+    //
+    // Enable Debug privilege to the current token
+    //
+    if (!WindowsSetDebugPrivilege())
+    {
+        ShowMessages("err, couldn't set debug privilege\n");
+        return 1;
+    }
+
+    //
+    // Create handle from the KD module
+    //
     if (HyperDbgCreateHandleFromKdModule() == 1)
     {
         //
@@ -737,15 +772,6 @@ HyperDbgLoadVmmModule()
             "however, HyperTrace can also operate without the vmm module, although hypervisor-specific features will not be available\n"
             "to solve this problem, first unload the trace module using the 'unload trace' command, next, load "
             "the vmm module and then load the trace module again. This way, the trace module is reloaded with hypervisor APIs\n");
-        return 1;
-    }
-
-    //
-    // Enable Debug privilege to the current token
-    //
-    if (!WindowsSetDebugPrivilege())
-    {
-        ShowMessages("err, couldn't set debug privilege\n");
         return 1;
     }
 

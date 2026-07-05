@@ -639,9 +639,9 @@ PtEngineStart(PT_PER_CPU * Cpu)
     if (g_RunningOnHypervisorEnvironment)
     {
         IsOnVmxRootMode = g_Callbacks.VmFuncVmxGetCurrentExecutionMode();
-        LogInfo("PT: PtEngineStart on core %u (vmx-root=%u)\n",
-                KeGetCurrentProcessorNumberEx(NULL),
-                (UINT32)IsOnVmxRootMode);
+        // LogInfo("PT: PtEngineStart on core %u (vmx-root=%u)\n",
+        //         KeGetCurrentProcessorNumberEx(NULL),
+        //         (UINT32)IsOnVmxRootMode);
     }
 
     //
@@ -826,9 +826,9 @@ PtEngineStop(PT_PER_CPU * Cpu, PT_OUTPUT_BUFFER * Out)
     if (g_RunningOnHypervisorEnvironment)
     {
         IsOnVmxRootMode = g_Callbacks.VmFuncVmxGetCurrentExecutionMode();
-        LogInfo("PT: PtEngineStop on core %u (vmx-root=%u)\n",
-                KeGetCurrentProcessorNumberEx(NULL),
-                (UINT32)IsOnVmxRootMode);
+        // LogInfo("PT: PtEngineStop on core %u (vmx-root=%u)\n",
+        //         KeGetCurrentProcessorNumberEx(NULL),
+        //         (UINT32)IsOnVmxRootMode);
     }
 
     //
@@ -1027,9 +1027,9 @@ PtCheck()
 
     if (g_RunningOnHypervisorEnvironment && !Caps.VmxSupport)
     {
-        LogInfo("PT: IA32_VMX_MISC[14] is clear — Intel PT in VMX is not "
-                "advertised on this CPU. Direct MSR programming still works "
-                "from VMX non-root because PT MSRs are not trapped.\n");
+        // LogInfo("PT: IA32_VMX_MISC[14] is clear - Intel PT in VMX is not "
+        //        "advertised on this CPU. Direct MSR programming still works "
+        //        "from VMX non-root because PT MSRs are not trapped.\n");
     }
 
     return TRUE;
@@ -1071,7 +1071,7 @@ PtAllocateAllCpuBuffers()
 
         if (PtEngineAllocateBuffers(Cpu, &Cfg) != 0)
         {
-            LogInfo("PT: buffer allocation failed on core %u\n", i);
+            // LogInfo("PT: buffer allocation failed on core %u\n", i);
             return FALSE;
         }
     }
@@ -1233,13 +1233,13 @@ PtStart()
         // Allocating from a DPC is unsafe (MmAllocateContiguousMemory* is
         // a paged routine) so just bail out.
         //
-        LogInfo("PT: buffers not allocated for core %u\n", CurrentCore);
+        // LogInfo("PT: buffers not allocated for core %u\n", CurrentCore);
         return FALSE;
     }
 
     if (PtEngineStart(Cpu) != 0)
     {
-        LogInfo("PT: PtEngineStart failed on core %u (state=%d)\n", CurrentCore, Cpu->State);
+        // LogInfo("PT: PtEngineStart failed on core %u (state=%d)\n", CurrentCore, Cpu->State);
         return FALSE;
     }
 
@@ -1263,7 +1263,7 @@ PtStop()
     CurrentCore = KeGetCurrentProcessorNumberEx(NULL);
     Cpu         = &g_PtStateList[CurrentCore];
 
-    LogInfo("PT: stopping trace on core %d\n", CurrentCore);
+    // LogInfo("PT: stopping trace on core %d\n", CurrentCore);
 
     PtEngineStop(Cpu, NULL);
 }
@@ -1284,7 +1284,7 @@ PtPause()
     CurrentCore = KeGetCurrentProcessorNumberEx(NULL);
     Cpu         = &g_PtStateList[CurrentCore];
 
-    LogInfo("PT: pausing trace on core %u\n", CurrentCore);
+    // LogInfo("PT: pausing trace on core %u\n", CurrentCore);
 
     PtEnginePause(Cpu);
 }
@@ -1304,7 +1304,7 @@ PtResume()
     CurrentCore = KeGetCurrentProcessorNumberEx(NULL);
     Cpu         = &g_PtStateList[CurrentCore];
 
-    LogInfo("PT: resuming trace on core %u\n", CurrentCore);
+    // LogInfo("PT: resuming trace on core %u\n", CurrentCore);
 
     PtEngineResume(Cpu);
 }
@@ -1399,14 +1399,14 @@ PtDump()
  *        handles that case before broadcasting.
  */
 VOID
-PtFilter(const PT_FILTER_OPTIONS * FilterOptions)
+PtFilter(const PT_APPLY_CORE_FILTER_REQUEST * FilterRequest)
 {
     UINT32          CurrentCore;
     PT_PER_CPU *    Cpu;
     UINT32          i;
     PT_CAPABILITIES Caps = {0};
 
-    if (g_PtStateList == NULL || FilterOptions == NULL)
+    if (g_PtStateList == NULL || FilterRequest == NULL)
         return;
 
     if (PtEngineQueryCapabilities(&Caps) != 0)
@@ -1415,7 +1415,7 @@ PtFilter(const PT_FILTER_OPTIONS * FilterOptions)
     CurrentCore = KeGetCurrentProcessorNumberEx(NULL);
     Cpu         = &g_PtStateList[CurrentCore];
 
-    LogInfo("PT: applying filter on core %u\n", CurrentCore);
+    // LogInfo("PT: applying filter on core %u\n", CurrentCore);
 
     //
     // Stop tracing on this CPU first so we can safely mutate Cpu->Config
@@ -1429,42 +1429,42 @@ PtFilter(const PT_FILTER_OPTIONS * FilterOptions)
     //
     // Apply only the user-tunable fields to this CPU's per-CPU config.
     //
-    Cpu->Config.TraceUser   = FilterOptions->TraceUser;
-    Cpu->Config.TraceKernel = FilterOptions->TraceKernel;
+    Cpu->Config.TraceUser   = (BOOLEAN)FilterRequest->FilterOptions.TraceUser;
+    Cpu->Config.TraceKernel = (BOOLEAN)FilterRequest->FilterOptions.TraceKernel;
 
-    if (FilterOptions->TargetCr3 != 0 && !Caps.Cr3Filtering)
+    if (FilterRequest->EnableOptions.Cr3 != 0 && !Caps.Cr3Filtering)
     {
-        LogInfo("PT: CR3 filtering requested but not supported by CPU\n");
+        // LogInfo("PT: CR3 filtering requested but not supported by CPU\n");
         Cpu->Config.TargetCr3 = 0;
     }
     else
     {
-        Cpu->Config.TargetCr3 = FilterOptions->TargetCr3;
+        Cpu->Config.TargetCr3 = FilterRequest->EnableOptions.Cr3;
     }
 
-    if (FilterOptions->NumAddrRanges > Caps.NumAddrRanges)
+    if (FilterRequest->FilterOptions.NumAddrRanges > Caps.NumAddrRanges)
     {
-        LogInfo("PT: requested %u IP filter ranges, but CPU only supports %u\n", FilterOptions->NumAddrRanges, Caps.NumAddrRanges);
+        // LogInfo("PT: requested %u IP filter ranges, but CPU only supports %u\n", FilterRequest->FilterOptions.NumAddrRanges, Caps.NumAddrRanges);
         Cpu->Config.NumAddrRanges = Caps.NumAddrRanges;
     }
-    else if (FilterOptions->NumAddrRanges > 0 && !Caps.IpFiltering)
+    else if (FilterRequest->FilterOptions.NumAddrRanges > 0 && !Caps.IpFiltering)
     {
-        LogInfo("PT: IP filtering requested but not supported by CPU\n");
+        // LogInfo("PT: IP filtering requested but not supported by CPU\n");
         Cpu->Config.NumAddrRanges = 0;
     }
     else
     {
-        Cpu->Config.NumAddrRanges = FilterOptions->NumAddrRanges;
+        Cpu->Config.NumAddrRanges = FilterRequest->FilterOptions.NumAddrRanges;
     }
 
-    if (FilterOptions->BufferSize != 0)
+    if (FilterRequest->BufferSize != 0)
     {
-        Cpu->Config.BufferSize = FilterOptions->BufferSize;
+        Cpu->Config.BufferSize = FilterRequest->BufferSize;
     }
 
     for (i = 0; i < PT_MAX_ADDR_RANGES; i++)
     {
-        Cpu->Config.AddrRanges[i] = FilterOptions->AddrRanges[i];
+        Cpu->Config.AddrRanges[i] = FilterRequest->FilterOptions.AddrRanges[i];
     }
 
     //
@@ -1499,7 +1499,7 @@ PtFlush()
     CurrentCore = KeGetCurrentProcessorNumberEx(NULL);
     Cpu         = &g_PtStateList[CurrentCore];
 
-    LogInfo("PT: flush on core %u\n", CurrentCore);
+    // LogInfo("PT: flush on core %u\n", CurrentCore);
 
     if (Cpu->State == PT_STATE_TRACING || Cpu->State == PT_STATE_PAUSED)
     {

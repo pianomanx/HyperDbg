@@ -41,30 +41,29 @@ typedef RFLAGS * PRFLAGS;
 #define USE_NATIVE_SDK_HEADERS
 #define _AMD64_
 
-
 #ifdef _WIN32
-#if defined(USE__NATIVE_PHNT_HEADERS)
+#    if defined(USE__NATIVE_PHNT_HEADERS)
 
 //
 // Dirty fix: the "PCWCHAR" in undefined in "ntrtl.h" so I deifined it here.
 //
 typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 
-#    define PHNT_MODE               PHNT_MODE_USER
-#    define PHNT_VERSION            PHNT_WIN11 // Windows 11
-#    define PHNT_PATCH_FOR_HYPERDBG TRUE
+#        define PHNT_MODE               PHNT_MODE_USER
+#        define PHNT_VERSION            PHNT_WIN11 // Windows 11
+#        define PHNT_PATCH_FOR_HYPERDBG TRUE
 
-#    include <phnt/phnt_windows.h>
-#    include <phnt/phnt.h>
+#        include <phnt/phnt_windows.h>
+#        include <phnt/phnt.h>
 
-#elif defined(USE_NATIVE_SDK_HEADERS)
+#    elif defined(USE_NATIVE_SDK_HEADERS)
 
-#    include <winternl.h>
-#    include <Windows.h>
-#    include <winioctl.h>
-#    include <platform/user/header/Windows.h>
+#        include <winternl.h>
+#        include <Windows.h>
+#        include <winioctl.h>
+#        include <platform/user/header/Windows.h>
 
-#endif
+#    endif
 
 #endif //_WIN32
 
@@ -108,6 +107,7 @@ typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 #include <cstring>
 #include <unordered_set>
 #include <regex>
+#include <dbghelp.h>
 
 //
 // Scope definitions
@@ -187,50 +187,61 @@ typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 //
 // PCI IDs
 //
-#include "header/pci-id.h"
+#include "header/debugger/misc/pci-id.h"
+
+//
+// Intel PT
+//
+#include "../dependencies/libipt/intel-pt.h"
 
 //
 // General
 //
-#include "header/libhyperdbg.h"
-#include "header/export.h"
-#include "header/inipp.h"
-#include "header/commands.h"
-#include "header/common.h"
-#include "header/symbol.h"
-#include "header/debugger.h"
-#include "header/script-engine.h"
-#include "header/help.h"
+#include "header/app/libhyperdbg.h"
+#include "header/export/export.h"
+#include "header/debugger/misc/inipp.h"
+#include "header/debugger/commands/commands.h"
+#include "header/common/common.h"
+#include "header/debugger/script-engine/symbol.h"
+#include "header/debugger/misc/pt-helper.h"
+#include "header/debugger/core/debugger.h"
+#include "header/debugger/script-engine/script-engine.h"
+#include "header/debugger/commands/help.h"
 #ifdef _WIN32
-#    include "header/install.h"
+#    include "header/debugger/driver-loader/install.h"
 #endif
-#include "header/list.h"
-#include "header/tests.h"
-#include "header/messaging.h"
-#include "header/packets.h"
-#include "header/transparency.h"
-#include "header/communication.h"
-#include "header/namedpipe.h"
-#include "header/forwarding.h"
-#include "header/kd.h"
+#include "header/common/list.h"
+#include "header/debugger/tests/tests.h"
+#include "header/app/messaging.h"
+#include "header/app/packets.h"
+#include "header/debugger/transparency/transparency.h"
+#include "header/debugger/communication/communication.h"
+#include "header/debugger/communication/namedpipe.h"
+#include "header/debugger/communication/forwarding.h"
+#include "header/debugger/kernel-level/kd.h"
 
 //
 // Components
 //
 #include "../include/components/pe/header/pe-image-reader.h"
 
-#include "header/pe-parser.h"
-#include "header/ud.h"
-#include "header/objects.h"
-#include "header/steppings.h"
-#include "header/rev-ctrl.h"
-#include "header/assembler.h"
+#include "header/debugger/user-level/pe-parser.h"
+#include "header/debugger/user-level/ud.h"
+#include "header/objects/objects.h"
+#include "header/debugger/core/steppings.h"
+#include "header/rev/rev-ctrl.h"
+#include "header/debugger/misc/assembler.h"
 
 //
 // hwdbg
 //
-#include "header/hwdbg-interpreter.h"
-#include "header/hwdbg-scripts.h"
+#include "header/hwdbg/hwdbg-interpreter.h"
+#include "header/hwdbg/hwdbg-scripts.h"
+
+//
+// Zydis headers
+//
+#include <Zydis/Zydis.h>
 
 //
 // Libraries
@@ -260,5 +271,10 @@ typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 //
 #    pragma comment(lib, "Psapi.lib")
 #    pragma comment(lib, "Kernel32.lib")
+
+//
+// For resolving symbols on Intel PT
+//
+#    pragma comment(lib, "dbghelp.lib")
 
 #endif // HYPERDBG_ENV_WINDOWS
