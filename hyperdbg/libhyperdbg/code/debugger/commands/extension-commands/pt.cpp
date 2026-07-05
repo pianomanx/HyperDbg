@@ -18,8 +18,6 @@
 extern BOOLEAN g_IsHyperTraceModuleLoaded;
 extern BOOLEAN g_IsSerialConnectedToRemoteDebuggee;
 
-
-
 /**
  * @brief help of the !pt command
  *
@@ -403,408 +401,72 @@ CommandPtSendFilterByPid(UINT32  ProcessId,
     return TRUE;
 }
 
-static int
-CommandPtReadImage(UINT8 * Buffer, SIZE_T Size, const struct pt_asid * Asid, UINT64 Ip, VOID * Context)
-{
-    (VOID) Asid;
-
-    IMAGE_SYMBOL_CONTEXT * Ctx = (IMAGE_SYMBOL_CONTEXT *)Context;
-
-    if (Ctx == NULL || Ctx->Code == NULL || Ip < Ctx->CodeBase || Ip >= Ctx->CodeBase + Ctx->CodeSize)
-        return -pte_nomap;
-
-    UINT64 Available = Ctx->CodeBase + Ctx->CodeSize - Ip;
-    SIZE_T Count     = (Size < Available) ? Size : (SIZE_T)Available;
-
-    memcpy(Buffer, Ctx->Code + (Ip - Ctx->CodeBase), Count);
-    return (int)Count;
-}
-
-typedef struct _PROC_BASIC_INFO
-{
-    LONG      ExitStatus;
-    PVOID     PebBaseAddress;
-    ULONG_PTR Reserved[4];
-} PROC_BASIC_INFO;
-
-typedef LONG(NTAPI * PFN_NT_QIP)(HANDLE, ULONG, PVOID, ULONG, PULONG);
-
-static BOOLEAN
-CommandPtCaptureImage(HANDLE Process, UINT64 * TextStart, UINT64 * TextEnd, IMAGE_SYMBOL_CONTEXT * Ctx)
-{
-    HMODULE            Ntdll = GetModuleHandleA("ntdll.dll");
-    PFN_NT_QIP         NtQip = Ntdll ? (PFN_NT_QIP)GetProcAddress(Ntdll, "NtQueryInformationProcess") : NULL;
-    PROC_BASIC_INFO    Pbi   = {0};
-    ULONG              Ret   = 0;
-    SIZE_T             Got   = 0;
-    UINT64             Base  = 0;
-    IMAGE_DOS_HEADER   Dos;
-    IMAGE_NT_HEADERS64 Nt;
-    UINT64             SectionBase;
-
-    if (NtQip == NULL || NtQip(Process, 0, &Pbi, sizeof(Pbi), &Ret) < 0 || Pbi.PebBaseAddress == NULL)
-        return FALSE;
-
-    if (!ReadProcessMemory(Process, (PBYTE)Pbi.PebBaseAddress + 0x10, &Base, sizeof(Base), &Got) || Base == 0)
-        return FALSE;
-
-    if (!ReadProcessMemory(Process, (PVOID)Base, &Dos, sizeof(Dos), &Got) || Dos.e_magic != IMAGE_DOS_SIGNATURE)
-        return FALSE;
-
-    if (!ReadProcessMemory(Process, (PBYTE)Base + Dos.e_lfanew, &Nt, sizeof(Nt), &Got) || Nt.Signature != IMAGE_NT_SIGNATURE)
-        return FALSE;
-
-    Ctx->ImageBase = Base;
-    SectionBase    = Base + Dos.e_lfanew + FIELD_OFFSET(IMAGE_NT_HEADERS64, OptionalHeader) + Nt.FileHeader.SizeOfOptionalHeader;
-
-    for (WORD i = 0; i < Nt.FileHeader.NumberOfSections; i++)
-    {
-        IMAGE_SECTION_HEADER Section;
-
-        if (!ReadProcessMemory(Process, (PBYTE)SectionBase + (UINT64)i * sizeof(Section), &Section, sizeof(Section), &Got))
-            return FALSE;
-
-        if (memcmp(Section.Name, ".text", 6) != 0)
-            continue;
-
-        UINT64 Start = Base + Section.VirtualAddress;
-        UINT64 Size  = Section.Misc.VirtualSize ? Section.Misc.VirtualSize : Section.SizeOfRawData;
-
-        if (Size == 0)
-            return FALSE;
-
-        Ctx->Code = (UINT8 *)malloc((SIZE_T)Size);
-        if (Ctx->Code == NULL)
-            return FALSE;
-
-        if (!ReadProcessMemory(Process, (PVOID)Start, Ctx->Code, (SIZE_T)Size, &Got) || Got != Size)
-        {
-            free(Ctx->Code);
-            Ctx->Code = NULL;
-            return FALSE;
-        }
-
-        Ctx->CodeBase = Start;
-        Ctx->CodeSize = Size;
-        *TextStart    = Start;
-        *TextEnd      = Start + Size - 1;
-        return TRUE;
-    }
-
-    return FALSE;
-}
-
-static BOOLEAN
-CommandPtResolveFunction(HANDLE Process, const CHAR * Path, const CHAR * Name, UINT64 ImageBase, UINT64 * Start, UINT64 * End)
-{
-    union
-    {
-        SYMBOL_INFO Info;
-        BYTE        Buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME];
-    } Symbol   = {0};
-    BOOLEAN Ok = FALSE;
-
-    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
-    if (!SymInitialize(Process, NULL, FALSE))
-        return FALSE;
-
-    if (SymLoadModuleEx(Process, NULL, Path, NULL, (DWORD64)ImageBase, 0, NULL, 0) != 0)
-    {
-        Symbol.Info.SizeOfStruct = sizeof(SYMBOL_INFO);
-        Symbol.Info.MaxNameLen   = MAX_SYM_NAME;
-
-        if (SymFromName(Process, Name, &Symbol.Info) && Symbol.Info.Address != 0)
-        {
-            *Start = Symbol.Info.Address;
-            *End   = Symbol.Info.Address + (Symbol.Info.Size ? Symbol.Info.Size : 0x200) - 1;
-            Ok     = TRUE;
-        }
-    }
-
-    SymCleanup(Process);
-    return Ok;
-}
-
-static const CHAR *
-CommandPtPacketName(enum pt_packet_type Type)
-{
-    switch (Type)
-    {
-    case ppt_psb:
-        return "PSB";
-    case ppt_psbend:
-        return "PSBEND";
-    case ppt_pad:
-        return "PAD";
-    case ppt_fup:
-        return "FUP";
-    case ppt_tip:
-        return "TIP";
-    case ppt_tip_pge:
-        return "TIP.PGE";
-    case ppt_tip_pgd:
-        return "TIP.PGD";
-    case ppt_tnt_8:
-        return "TNT8";
-    case ppt_tnt_64:
-        return "TNT64";
-    case ppt_mode:
-        return "MODE";
-    case ppt_pip:
-        return "PIP";
-    case ppt_vmcs:
-        return "VMCS";
-    case ppt_cbr:
-        return "CBR";
-    case ppt_tsc:
-        return "TSC";
-    case ppt_tma:
-        return "TMA";
-    case ppt_mtc:
-        return "MTC";
-    case ppt_cyc:
-        return "CYC";
-    case ppt_ovf:
-        return "OVF";
-    case ppt_stop:
-        return "STOP";
-    case ppt_exstop:
-        return "EXSTOP";
-    case ppt_mnt:
-        return "MNT";
-    case ppt_ptw:
-        return "PTW";
-    default:
-        return "?";
-    }
-}
-
-static UINT64
-CommandPtReconstructIp(const struct pt_packet_ip * Packet, UINT64 * LastIp)
-{
-    UINT64 Value = *LastIp;
-
-    switch (Packet->ipc)
-    {
-    case pt_ipc_update_16:
-        Value = (Value & ~0xffffull) | (Packet->ip & 0xffffull);
-        break;
-    case pt_ipc_update_32:
-        Value = (Value & ~0xffffffffull) | (Packet->ip & 0xffffffffull);
-        break;
-    case pt_ipc_update_48:
-        Value = (Value & ~0xffffffffffffull) | (Packet->ip & 0xffffffffffffull);
-        break;
-    case pt_ipc_sext_48:
-        Value = Packet->ip & 0xffffffffffffull;
-        if (Value & 0x800000000000ull)
-            Value |= 0xffff000000000000ull;
-        break;
-    default:
-        Value = Packet->ip;
-        break;
-    }
-
-    *LastIp = Value;
-    return Value;
-}
-
-static UINT64
-CommandPtDecodeCorePackets(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size, UINT64 ImageBase)
-{
-    struct pt_config           Config;
-    struct pt_packet_decoder * Decoder;
-    UINT64                     Count  = 0;
-    UINT64                     LastIp = 0;
-    int                        Status;
-
-    pt_config_init(&Config);
-    Config.begin = (UINT8 *)Buffer;
-    Config.end   = (UINT8 *)Buffer + Size;
-
-    Decoder = pt_pkt_alloc_decoder(&Config);
-    if (Decoder == NULL)
-    {
-        ShowMessages("[-] core %u: cannot allocate packet decoder\n", Cpu);
-        return 0;
-    }
-
-    for (;;)
-    {
-        Status = pt_pkt_sync_forward(Decoder);
-        if (Status < 0)
-            break;
-
-        for (;;)
-        {
-            struct pt_packet Packet;
-
-            Status = pt_pkt_next(Decoder, &Packet, sizeof(Packet));
-            if (Status < 0)
-                break;
-
-            Count++;
-
-            switch (Packet.type)
-            {
-            case ppt_tnt_8:
-            case ppt_tnt_64:
-                ShowMessages("    %-8s %2u  ", CommandPtPacketName(Packet.type), Packet.payload.tnt.bit_size);
-                for (UINT8 Bit = 0; Bit < Packet.payload.tnt.bit_size && Bit < 64; Bit++)
-                    putchar(((Packet.payload.tnt.payload >> (Packet.payload.tnt.bit_size - 1 - Bit)) & 1) ? 'T' : 'N');
-                putchar('\n');
-                break;
-
-            case ppt_tip:
-            case ppt_fup:
-            case ppt_tip_pge:
-            case ppt_tip_pgd:
-                if (Packet.payload.ip.ipc == pt_ipc_suppressed)
-                    ShowMessages("    %-8s (ip suppressed)\n", CommandPtPacketName(Packet.type));
-                else
-                {
-                    UINT64 Ip = CommandPtReconstructIp(&Packet.payload.ip, &LastIp);
-                    ShowMessages("    %-8s 0x%016llx  exe+0x%llx\n",
-                                 CommandPtPacketName(Packet.type),
-                                 (UINT64)Ip,
-                                 (UINT64)(Ip - ImageBase));
-                }
-                break;
-
-            case ppt_pip:
-                ShowMessages("    %-8s cr3=0x%llx\n", CommandPtPacketName(Packet.type), (UINT64)Packet.payload.pip.cr3);
-                break;
-
-            case ppt_cbr:
-                // ShowMessages("    %-8s ratio=%u\n", CommandPtPacketName(Packet.type), Packet.payload.cbr.ratio);
-                break;
-
-            case ppt_tsc:
-                ShowMessages("    %-8s tsc=0x%llx\n", CommandPtPacketName(Packet.type), (UINT64)Packet.payload.tsc.tsc);
-                break;
-
-            default:
-                // ShowMessages("    %-8s\n", CommandPtPacketName(Packet.type));
-                break;
-            }
-        }
-    }
-
-    pt_pkt_free_decoder(Decoder);
-    return Count;
-}
-
-static UINT64
-CommandPtDecodeCore(UINT32 Cpu, const UINT8 * Buffer, UINT64 Size, IMAGE_SYMBOL_CONTEXT * Ctx)
-{
-    struct pt_config         Config;
-    struct pt_insn_decoder * Decoder;
-    struct pt_image *        Image;
-    UINT64                   Count = 0;
-    int                      Status;
-
-    pt_config_init(&Config);
-    Config.begin = (UINT8 *)Buffer;
-    Config.end   = (UINT8 *)Buffer + Size;
-
-    Decoder = pt_insn_alloc_decoder(&Config);
-    if (Decoder == NULL)
-    {
-        ShowMessages("[-] core %u: cannot allocate instruction decoder\n", Cpu);
-        return 0;
-    }
-
-    Image = pt_insn_get_image(Decoder);
-    pt_image_set_callback(Image, CommandPtReadImage, Ctx);
-
-    for (;;)
-    {
-        Status = pt_insn_sync_forward(Decoder);
-        if (Status < 0)
-            break;
-
-        for (;;)
-        {
-            struct pt_insn Insn;
-
-            while (Status & pts_event_pending)
-            {
-                struct pt_event Event;
-                Status = pt_insn_event(Decoder, &Event, sizeof(Event));
-                if (Status < 0)
-                    break;
-            }
-
-            if (Status < 0 || (Status & pts_eos))
-                break;
-
-            Status = pt_insn_next(Decoder, &Insn, sizeof(Insn));
-            if (Status < 0)
-                break;
-
-            ZydisDisassembledInstruction Disasm;
-            ZydisMachineMode             Mode = (Insn.mode == ptem_32bit) ? ZYDIS_MACHINE_MODE_LEGACY_32 : ZYDIS_MACHINE_MODE_LONG_64;
-
-            if (ZYAN_SUCCESS(ZydisDisassembleIntel(Mode, Insn.ip, Insn.raw, Insn.size, &Disasm)))
-                ShowMessages("    0x%016llx  exe+0x%-6llx  %s\n",
-                             (UINT64)Insn.ip,
-                             (UINT64)(Insn.ip - Ctx->ImageBase),
-                             Disasm.text);
-            else
-                ShowMessages("    0x%016llx  (undecodable)\n", (UINT64)Insn.ip);
-
-            Count++;
-        }
-
-        if (Status >= 0 && (Status & pts_eos))
-            break;
-    }
-
-    pt_insn_free_decoder(Decoder);
-    return Count;
-}
-
+/**
+ * @brief Shared core: enable PT, wait for the target, decode and disable
+ *
+ * @details Called by the three specialised helpers after they have filled
+ *          Process with a valid hProcess (and optionally hThread).
+ *          Owns and closes all handles in Process before returning.
+ *
+ * @param Process      Pointer to a PROCESS_INFORMATION whose hProcess (and
+ *                     optionally hThread) have already been opened/created
+ * @param Path         Executable path used for symbol resolution, or NULL
+ * @param Function     Symbol name to narrow the IP filter, or NULL
+ * @param Packets      TRUE  → decode raw packets; FALSE → decode instructions
+ * @param PinCore      ≥ 0  → pin the target to that logical core; < 0 → free
+ * @param LaunchedNew  TRUE  → process was launched suspended here (will be
+ *                             resumed, and terminated on error); FALSE → the
+ *                             process was already running (never terminated)
+ *
+ * @return VOID
+ */
 static VOID
-CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, int PinCore)
+CommandPtRunAndTraceCore(PROCESS_INFORMATION * Process,
+                         const CHAR *          Path,
+                         const CHAR *          Function,
+                         BOOLEAN               Packets,
+                         int                   PinCore,
+                         BOOLEAN               LaunchedNew)
 {
-    STARTUPINFOA                    Startup     = {};
-    PROCESS_INFORMATION             Process     = {};
+    DWORD_PTR                       Mask;
     HYPERTRACE_PT_MMAP_PACKETS      Mmap        = {};
     HYPERTRACE_PT_OPERATION_PACKETS Sizes       = {};
-    IMAGE_SYMBOL_CONTEXT                Ctx         = {};
+    IMAGE_SYMBOL_CONTEXT            Ctx         = {};
     UINT64                          TextStart   = 0;
     UINT64                          TextEnd     = 0;
     UINT64                          FilterStart = 0;
     UINT64                          FilterEnd   = 0;
     UINT64                          Total       = 0;
 
-    Startup.cb = sizeof(Startup);
-
-    if (!CreateProcessA(Path, NULL, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &Startup, &Process))
+    if (PinCore < 0)
     {
-        ShowMessages("[-] cannot launch '%s' (error 0x%x)\n", Path, GetLastError());
-        return;
+        PinCore = PT_DEFAULT_PINNING_CORE;
     }
 
-    ShowMessages("[+] launched '%s' (pid %u, suspended)\n", Path, Process.dwProcessId);
+    Mask = (DWORD_PTR)1 << PinCore;
 
-    if (PinCore >= 0)
+    //
+    // Set process affinity to the specified core so that all PT trace will land on that core
+    //
+    if (SetProcessAffinityMask(Process->hProcess, Mask))
     {
-        DWORD_PTR Mask = (DWORD_PTR)1 << PinCore;
-        if (SetProcessAffinityMask(Process.hProcess, Mask))
-            ShowMessages("[+] pinned target to core %d (all trace should land on this core)\n", PinCore);
-        else
-            ShowMessages("[!] could not pin to core %d (error 0x%x); running unpinned\n", PinCore, GetLastError());
+        ShowMessages("[+] pinned target to core %d (all trace should land on this core)\n", PinCore);
     }
     else
     {
-        ShowMessages("[*] target unpinned (scheduler may migrate it across cores)\n");
+        ShowMessages("[!] could not pin to core %d (error 0x%x); running unpinned\n", PinCore, GetLastError());
     }
 
-    if (!CommandPtCaptureImage(Process.hProcess, &TextStart, &TextEnd, &Ctx))
+    //
+    // Capture the .text section of the target process image for symbol resolution
+    //
+    if (!PtHelperCaptureImage(Process->hProcess, &TextStart, &TextEnd, &Ctx))
     {
         ShowMessages("[-] cannot read target image / .text section\n");
-        TerminateProcess(Process.hProcess, 1);
+
+        if (LaunchedNew)
+            TerminateProcess(Process->hProcess, 1);
+
         goto Cleanup;
     }
 
@@ -817,7 +479,11 @@ CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, 
     FilterStart = TextStart;
     FilterEnd   = TextEnd;
 
-    if (Function != NULL && CommandPtResolveFunction(Process.hProcess, Path, Function, Ctx.ImageBase, &FilterStart, &FilterEnd))
+    //
+    // Narrow the IP filter to the specified function if possible
+    //
+    if (Function != NULL && Path != NULL &&
+        PtHelperResolveFunction(Process->hProcess, Path, Function, Ctx.ImageBase, &FilterStart, &FilterEnd))
     {
         ShowMessages("[+] IP filter narrowed to '%s' 0x%llx-0x%llx (%llu bytes)\n",
                      Function,
@@ -827,44 +493,77 @@ CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, 
     }
     else
     {
-        ShowMessages("[!] IP filter: whole .text (symbol '%s' not found - build the target with a PDB)\n",
+        ShowMessages("[!] IP filter: whole .text (symbol '%s' not found or not applicable)\n",
                      Function ? Function : "(none)");
     }
 
-    if (!CommandPtSendFilterByPid(Process.dwProcessId, TRUE, FALSE, FilterStart, FilterEnd, NULL, NULL, NULL, NULL, NULL, NULL) ||
+    //
+    // Enable PT with the specified filter and wait for the target process to exit
+    //
+    if (!CommandPtSendFilterByPid(Process->dwProcessId, TRUE, FALSE, FilterStart, FilterEnd, NULL, NULL, NULL, NULL, NULL, NULL) ||
         !CommandPtSendEnable())
     {
         ShowMessages("[-] cannot enable Intel PT\n");
-        TerminateProcess(Process.hProcess, 1);
+
+        if (LaunchedNew)
+        {
+            TerminateProcess(Process->hProcess, 1);
+        }
+
         goto Cleanup;
     }
 
-    if (!hyperdbg_u_pt_mmap(&Mmap))
+    //
+    // Request the PT buffers to be mapped into user space so that we can decode them after the target exits
+    //
+    if (!HyperDbgPtMmapSendRequest(&Mmap))
     {
-        ShowMessages("[-] pt_mmap failed\n");
+        ShowMessages("[-] MMAP failed\n");
         CommandPtSendDisable();
-        TerminateProcess(Process.hProcess, 1);
+        if (LaunchedNew)
+            TerminateProcess(Process->hProcess, 1);
         goto Cleanup;
     }
 
     ShowMessages("[+] PT enabled, %u per-core buffers mapped\n", Mmap.NumCpus);
-    ShowMessages("[*] resuming target and waiting for it to exit...\n");
 
-    ResumeThread(Process.hThread);
-    WaitForSingleObject(Process.hProcess, INFINITE);
+    if (LaunchedNew)
+    {
+        ShowMessages("[*] resuming target and waiting for it to exit...\n");
+        ResumeThread(Process->hThread);
+    }
+    else
+    {
+        ShowMessages("[*] waiting for target process to exit...\n");
+    }
+
+    //
+    // Wait for the target process to exit before decoding the trace
+    //
+    WaitForSingleObject(Process->hProcess, INFINITE);
+
     ShowMessages("[+] target exited, decoding trace\n");
 
+    //
+    // Pause PT so that the buffers are not being written to while we decode them
+    //
     CommandPtSendPause();
 
     Sizes.PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_SIZE;
-    if (!hyperdbg_u_pt_operation(&Sizes))
+
+    //
+    // Request the sizes of the PT buffers for each core so that we know how much to decode
+    //
+    if (!CommandPtSendRequest(&Sizes))
     {
         ShowMessages("[-] cannot query PT sizes\n");
         CommandPtSendDisable();
-
         goto Cleanup;
     }
 
+    //
+    // Decode the trace for each core that has a non-zero buffer size
+    //
     for (UINT32 i = 0; i < Mmap.NumCpus; i++)
     {
         UINT32 Cpu   = Mmap.Cpus[i].CpuId;
@@ -878,24 +577,180 @@ CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, 
 
         ShowMessages("\n[*] core %u: %llu bytes of trace\n", Cpu, (UINT64)Bytes);
         Total += Packets
-                     ? CommandPtDecodeCorePackets(Cpu, (const UINT8 *)(ULONG_PTR)Mmap.Cpus[i].UserVa, Bytes, Ctx.ImageBase)
-                     : CommandPtDecodeCore(Cpu, (const UINT8 *)(ULONG_PTR)Mmap.Cpus[i].UserVa, Bytes, &Ctx);
+                     ? PtHelperDecodeCorePackets(Cpu, (const UINT8 *)(ULONG_PTR)Mmap.Cpus[i].UserVa, Bytes, Ctx.ImageBase)
+                     : PtHelperDecodeCore(Cpu, (const UINT8 *)(ULONG_PTR)Mmap.Cpus[i].UserVa, Bytes, &Ctx);
     }
 
     ShowMessages("\n[+] decoded %llu %s total\n", (UINT64)Total, Packets ? "packet(s)" : "instruction(s)");
 
+    //
+    // Disable PT now that we are done decoding the trace
+    //
     CommandPtSendDisable();
 
 Cleanup:
+
     if (Ctx.Code != NULL)
     {
         free(Ctx.Code);
         Ctx.Code = NULL;
     }
-    if (Process.hThread != NULL)
-        CloseHandle(Process.hThread);
-    if (Process.hProcess != NULL)
-        CloseHandle(Process.hProcess);
+
+    if (Process->hThread != NULL)
+        CloseHandle(Process->hThread);
+    if (Process->hProcess != NULL)
+        CloseHandle(Process->hProcess);
+}
+
+/**
+ * @brief Launch an executable at Path as a suspended process, enable PT, and
+ *        decode the trace after the process exits
+ *
+ * @param Path      Full path to the executable to launch
+ * @param Function  Symbol name to narrow the IP filter, or NULL for whole .text
+ * @param Packets   TRUE → decode raw packets; FALSE → decode instructions
+ * @param PinCore   ≥ 0 → pin to that logical core; < 0 → unpinned
+ *
+ * @return VOID
+ */
+static VOID
+CommandPtRunAndTraceByPath(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, int PinCore)
+{
+    STARTUPINFOA        Startup = {};
+    PROCESS_INFORMATION Process = {};
+
+    Startup.cb = sizeof(Startup);
+
+    if (!CreateProcessA(Path, NULL, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &Startup, &Process))
+    {
+        ShowMessages("[-] cannot launch '%s' (error 0x%x)\n", Path, GetLastError());
+        return;
+    }
+
+    ShowMessages("[+] launched '%s' (pid %u, suspended)\n", Path, Process.dwProcessId);
+
+    CommandPtRunAndTraceCore(&Process, Path, Function, Packets, PinCore, TRUE);
+}
+
+/**
+ * @brief Open an existing process by PID, enable PT, and decode the trace
+ *        after the process exits
+ *
+ * @param ProcessId  PID of the target process
+ * @param Function   Symbol name to narrow the IP filter, or NULL for whole .text
+ * @param Packets    TRUE → decode raw packets; FALSE → decode instructions
+ * @param PinCore    ≥ 0 → pin to that logical core; < 0 → unpinned
+ *
+ * @return VOID
+ */
+static VOID
+CommandPtRunAndTraceByPid(UINT32 ProcessId, const CHAR * Function, BOOLEAN Packets, int PinCore)
+{
+    PROCESS_INFORMATION Process = {};
+
+    Process.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, (DWORD)ProcessId);
+
+    if (Process.hProcess == NULL)
+    {
+        ShowMessages("[-] cannot open process 0x%x (error 0x%x)\n", ProcessId, GetLastError());
+        return;
+    }
+
+    Process.dwProcessId = ProcessId;
+
+    ShowMessages("[+] attached to pid 0x%x\n", ProcessId);
+
+    CommandPtRunAndTraceCore(&Process, NULL, Function, Packets, PinCore, FALSE);
+}
+
+/**
+ * @brief Open an existing thread by TID, derive its owning process, enable PT,
+ *        and decode the trace after the process exits
+ *
+ * @param ThreadId  TID of the target thread
+ * @param Function  Symbol name to narrow the IP filter, or NULL for whole .text
+ * @param Packets   TRUE → decode raw packets; FALSE → decode instructions
+ * @param PinCore   ≥ 0 → pin to that logical core; < 0 → unpinned
+ *
+ * @return VOID
+ */
+static VOID
+CommandPtRunAndTraceByTid(UINT32 ThreadId, const CHAR * Function, BOOLEAN Packets, int PinCore)
+{
+    PROCESS_INFORMATION  Process      = {};
+    HANDLE               ThreadHandle = NULL;
+    DWORD                OwningPid    = 0;
+    THREAD_BASIC_INFO_EX Tbi          = {0};
+    ULONG                RetTid       = 0;
+    HMODULE              NtdllTid     = GetModuleHandleA("ntdll.dll");
+    PFN_NT_QIT           NtQit        = NtdllTid ? (PFN_NT_QIT)GetProcAddress(NtdllTid, "NtQueryInformationThread") : NULL;
+
+    ThreadHandle = OpenThread(THREAD_ALL_ACCESS, FALSE, (DWORD)ThreadId);
+
+    if (ThreadHandle == NULL)
+    {
+        ShowMessages("[-] cannot open thread 0x%x (error 0x%x)\n", ThreadId, GetLastError());
+        return;
+    }
+
+    if (NtQit == NULL || NtQit(ThreadHandle, 0, &Tbi, sizeof(Tbi), &RetTid) < 0 || Tbi.ClientId.UniqueProcess == NULL)
+    {
+        ShowMessages("[-] cannot get owning PID for thread 0x%x\n", ThreadId);
+        CloseHandle(ThreadHandle);
+        return;
+    }
+
+    OwningPid = (DWORD)(ULONG_PTR)Tbi.ClientId.UniqueProcess;
+
+    if (OwningPid == 0)
+    {
+        ShowMessages("[-] cannot get owning PID for thread 0x%x\n", ThreadId);
+        CloseHandle(ThreadHandle);
+        return;
+    }
+
+    Process.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, OwningPid);
+
+    if (Process.hProcess == NULL)
+    {
+        ShowMessages("[-] cannot open process %u (error 0x%x)\n", OwningPid, GetLastError());
+        CloseHandle(ThreadHandle);
+        return;
+    }
+
+    Process.hThread     = ThreadHandle;
+    Process.dwProcessId = OwningPid;
+    Process.dwThreadId  = ThreadId;
+
+    ShowMessages("[+] attached to tid 0x%x (owning pid %u)\n", ThreadId, OwningPid);
+
+    CommandPtRunAndTraceCore(&Process, NULL, Function, Packets, PinCore, FALSE);
+}
+
+/**
+ * @brief Wrapper: dispatch to the appropriate trace helper based on whichever
+ *        selector (Path, ProcessId, ThreadId) is provided
+ *
+ * @param Path       Executable path, or NULL
+ * @param Function   Symbol name for IP filter, or NULL
+ * @param Packets    TRUE → raw packets; FALSE → instructions
+ * @param PinCore    Logical core to pin the target to, or < 0 for unpinned
+ * @param ProcessId  PID of an existing process, or 0
+ * @param ThreadId   TID of an existing thread, or 0
+ *
+ * @return VOID
+ */
+static VOID
+CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, int PinCore, UINT32 ProcessId, UINT32 ThreadId)
+{
+    if (Path != NULL)
+        CommandPtRunAndTraceByPath(Path, Function, Packets, PinCore);
+    else if (ThreadId != 0)
+        CommandPtRunAndTraceByTid(ThreadId, Function, Packets, PinCore);
+    else if (ProcessId != 0)
+        CommandPtRunAndTraceByPid(ProcessId, Function, Packets, PinCore);
+    else
+        ShowMessages("[-] no path, PID, or TID specified\n");
 }
 
 /**
@@ -1189,13 +1044,25 @@ CommandPtParseEnable(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
     PtRequest->PtOperationType = HYPERTRACE_PT_OPERATION_REQUEST_TYPE_ENABLE;
 
     //
-    // Temporary workaround for testing , if a path is specified, resolve it to a PID and use that for the request
-    // TODO: Should be removed
+    // Temporary workaround for testing:
+    // If a path, PID, or TID is specified, invoke CommandPtRunAndTrace directly
+    // to launch/attach and decode the trace in one step.
+    // TODO: Should be removed once the kernel-side enable/filter path is complete.
     //
     if (HasPath)
     {
         ShowMessages("  Running '%s' on core: %llx\n", Path.c_str(), PtRequest->CoreId);
-        CommandPtRunAndTrace(Path.c_str(), NULL, FALSE, PtRequest->CoreId);
+        CommandPtRunAndTrace(Path.c_str(), NULL, FALSE, PtRequest->CoreId, 0, 0);
+    }
+    else if (HasPid)
+    {
+        ShowMessages("  Tracing pid 0x%llx on core: %llx\n", Pid, PtRequest->CoreId);
+        CommandPtRunAndTrace(NULL, NULL, FALSE, PtRequest->CoreId, (UINT32)Pid, 0);
+    }
+    else if (HasTid)
+    {
+        ShowMessages("  Tracing tid 0x%llx on core: %llx\n", Tid, PtRequest->CoreId);
+        CommandPtRunAndTrace(NULL, NULL, FALSE, PtRequest->CoreId, 0, (UINT32)Tid);
     }
 }
 
