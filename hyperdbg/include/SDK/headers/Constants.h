@@ -515,6 +515,12 @@ const UCHAR BuildSignature[] = {
  */
 #define MaximumSearchResults 0x1000
 
+/**
+ * @brief maximum nodes that will be returned by !dl dl command
+ *
+ */
+#define DL_DEFAULT_MAX_NODES 0x100
+
 //////////////////////////////////////////////////
 //                 Script Engine                //
 //////////////////////////////////////////////////

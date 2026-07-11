@@ -17,8 +17,6 @@
 extern BOOLEAN                  g_IsSerialConnectedToRemoteDebuggee;
 extern ACTIVE_DEBUGGING_PROCESS g_ActiveProcessDebuggingState;
 
-#define DL_DEFAULT_MAX_NODES 0x100
-
 /**
  * @brief help of u* d* !u* !d* commands
  *
