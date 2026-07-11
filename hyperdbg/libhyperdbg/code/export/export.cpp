@@ -501,6 +501,27 @@ hyperdbg_u_show_memory_or_disassemble(DEBUGGER_SHOW_MEMORY_STYLE   style,
 }
 
 /**
+ * @brief Show memory linked list
+ *
+ * @param target_address The target address of the linked list
+ * @param memory_type The type of memory (physical or virtual)
+ * @param pid The process ID of the linked list
+ * @param offset The offset of the linked list
+ * @param max_nodes The maximum number of nodes to show
+ *
+ * @return VOID
+ */
+VOID
+hyperdbg_u_show_memory_linked_list(UINT64                    target_address,
+                                   DEBUGGER_READ_MEMORY_TYPE memory_type,
+                                   UINT32                    pid,
+                                   UINT64                    offset,
+                                   UINT64                    max_nodes)
+{
+    HyperDbgShowMemoryLinkedList(target_address, memory_type, pid, offset, max_nodes);
+}
+
+/**
  * @brief Read all registers
  * @param guest_registers The buffer to store the registers
  * @param extra_registers The buffer to store the extra registers

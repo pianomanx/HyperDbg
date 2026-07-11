@@ -200,6 +200,13 @@ hyperdbg_u_show_memory_or_disassemble(DEBUGGER_SHOW_MEMORY_STYLE   style,
                                       UINT32                       size,
                                       PDEBUGGER_DT_COMMAND_OPTIONS dt_details);
 
+IMPORT_EXPORT_LIBHYPERDBG VOID
+hyperdbg_u_show_memory_linked_list(UINT64                    target_address,
+                                   DEBUGGER_READ_MEMORY_TYPE memory_type,
+                                   UINT32                    pid,
+                                   UINT64                    offset,
+                                   UINT64                    max_nodes);
+
 //
 // Writing memory
 //

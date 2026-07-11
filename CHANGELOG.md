@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 New release of the HyperDbg Debugger.
 
 ### Added
-- 
+- Added a new 'dl' command to traverse linked lists using virtual addresses, thanks to [@FallinBinary](https://github.com/FallinBinary) ([link](https://docs.hyperdbg.org/commands/debugging-commands/dl))([link](https://github.com/HyperDbg/HyperDbg/pull/635))
+- Added a new '!dl' command to traverse linked lists using physical addresses, thanks to [@FallinBinary](https://github.com/FallinBinary) ([link](https://docs.hyperdbg.org/commands/extension-commands/dl))([link](https://github.com/HyperDbg/HyperDbg/pull/635))
+- Exported SDK API for traversing linked lists (using virtual and physical memory) ([link](https://github.com/HyperDbg/HyperDbg/pull/635))
 
 ### Changed
 - 

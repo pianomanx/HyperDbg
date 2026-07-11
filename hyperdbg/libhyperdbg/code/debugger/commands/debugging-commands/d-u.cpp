@@ -27,8 +27,8 @@ extern ACTIVE_DEBUGGING_PROCESS g_ActiveProcessDebuggingState;
 VOID
 CommandReadMemoryAndDisassemblerHelp()
 {
-    ShowMessages("db dc dd dq !db !dc !dd !dq & u u64 !u !u64 u2 u32 !u2 !u32 & dl : reads the  "
-                 "memory in different shapes (hex), disassembles, or walks a linked list\n");
+    ShowMessages("db dc dd dq !db !dc !dd !dq & u u64 !u !u64 u2 u32 !u2 !u32 & dl & !dl : reads the  "
+                 "memory in different shapes (hex), disassembles, or walks linked lists\n");
     ShowMessages("db  Byte and ASCII characters\n");
     ShowMessages("dc  Double-word values (4 bytes) and ASCII characters\n");
     ShowMessages("dd  Double-word values (4 bytes)\n");
@@ -92,8 +92,6 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
 
     string FirstCommand = GetCaseSensitiveStringFromCommandToken(CommandTokens.front());
 
-    IsDlCommand = CompareLowerCaseStrings(CommandTokens.at(0), "dl");
-
     //
     // By default if the user-debugger is active, we use these commands
     // on the memory layout of the debuggee process
@@ -119,6 +117,9 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
         if (IsFirstCommand)
         {
             IsFirstCommand = FALSE;
+            IsDlCommand    = CompareLowerCaseStrings(CommandTokens.at(0), "dl") |
+                             CompareLowerCaseStrings(CommandTokens.at(0), "!dl");
+
             continue;
         }
 
@@ -173,7 +174,7 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
             continue;
         }
 
-        if (CompareLowerCaseStrings(Section, "o") && IsDlCommand)
+        if (IsDlCommand && CompareLowerCaseStrings(Section, "o"))
         {
             IsNextOffset = TRUE;
             continue;
@@ -223,6 +224,9 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
         return;
     }
 
+    //
+    // Check if the user didn't specify a length for d* and u* commands, then we use default value
+    //
     if (Length == 0 && !IsDlCommand)
     {
         //
@@ -241,6 +245,9 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
         }
     }
 
+    //
+    // Check if the user didn't specify a max node count for dl command, then we use default value
+    //
     if (IsDlCommand && MaxNodes == 0)
     {
         MaxNodes = DL_DEFAULT_MAX_NODES;
@@ -399,63 +406,12 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
             Length,
             NULL);
     }
-
-    //
-    // Walk a linked list (dl)
-    //
     else if (IsDlCommand)
     {
-        ShowMessages("walking linked list from %llx (offset = %llx)\n\n",
-                     TargetAddress,
-                     Offset);
-
-        UINT64 CurrentAddress = TargetAddress;
-        UINT64 Index          = 0;
-
-        while (CurrentAddress != 0 && Index < MaxNodes)
-        {
-            ShowMessages("%02llx: %016llx\n", Index, CurrentAddress);
-
-            UINT64                            NextPointer    = 0;
-            UINT32                            ReturnedLength = 0;
-            DEBUGGER_READ_MEMORY_ADDRESS_MODE AddressMode;
-            BOOLEAN                           Status;
-
-            Status = HyperDbgReadMemory(CurrentAddress + Offset,
-                                        DEBUGGER_READ_VIRTUAL_ADDRESS,
-                                        READ_FROM_KERNEL,
-                                        Pid,
-                                        sizeof(UINT64),
-                                        FALSE,
-                                        &AddressMode,
-                                        (BYTE *)&NextPointer,
-                                        &ReturnedLength);
-
-            if (!Status || ReturnedLength != sizeof(UINT64))
-            {
-                ShowMessages("err, unable to read memory at %llx\n",
-                             CurrentAddress + Offset);
-                break;
-            }
-
-            //
-            // Cycle detection: stop if we looped back to the head
-            // (common for doubly linked circular lists like LIST_ENTRY)
-            //
-            if (NextPointer == TargetAddress && Index > 0)
-            {
-                ShowMessages("\n(list is circular, returned to head)\n");
-                break;
-            }
-
-            CurrentAddress = NextPointer;
-            Index++;
-        }
-
-        if (Index >= MaxNodes)
-        {
-            ShowMessages("\n(stopped after %llx nodes; use 'l Count' to see more)\n",
-                         MaxNodes);
-        }
+        HyperDbgShowMemoryLinkedList(TargetAddress,
+                                     CompareLowerCaseStrings(CommandTokens.at(0), "dl") ? DEBUGGER_READ_VIRTUAL_ADDRESS : DEBUGGER_READ_PHYSICAL_ADDRESS,
+                                     Pid,
+                                     Offset,
+                                     MaxNodes);
     }
 }

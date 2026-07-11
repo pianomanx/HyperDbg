@@ -651,3 +651,76 @@ ShowMemoryCommandDQ(UCHAR * OutputBuffer, UINT32 Size, UINT64 Address, DEBUGGER_
         ShowMessages("\n");
     }
 }
+
+/**
+ * @brief Walk a linked list and show the nodes
+ *
+ * @param TargetAddress The address of the head of the linked list
+ * @param MemoryType The type of memory (physical or virtual)
+ * @param Pid The process ID to read from
+ * @param Offset The offset to the next pointer in the structure
+ * @param MaxNodes The maximum number of nodes to walk
+ *
+ * @return VOID
+ */
+VOID
+HyperDbgShowMemoryLinkedList(UINT64                    TargetAddress,
+                             DEBUGGER_READ_MEMORY_TYPE MemoryType,
+                             UINT32                    Pid,
+                             UINT64                    Offset,
+                             UINT64                    MaxNodes)
+{
+    ShowMessages("walking linked list (%s address) from %llx (offset = %llx)\n\n",
+                 MemoryType == DEBUGGER_READ_VIRTUAL_ADDRESS ? "virtual" : "physical",
+                 TargetAddress,
+                 Offset);
+
+    UINT64 CurrentAddress = TargetAddress;
+    UINT64 Index          = 0;
+
+    while (CurrentAddress != 0 && Index < MaxNodes)
+    {
+        ShowMessages("%02llx: %016llx\n", Index, CurrentAddress);
+
+        UINT64                            NextPointer    = 0;
+        UINT32                            ReturnedLength = 0;
+        DEBUGGER_READ_MEMORY_ADDRESS_MODE AddressMode;
+        BOOLEAN                           Status;
+
+        Status = HyperDbgReadMemory(CurrentAddress + Offset,
+                                    MemoryType,
+                                    READ_FROM_KERNEL,
+                                    Pid,
+                                    sizeof(UINT64),
+                                    FALSE,
+                                    &AddressMode,
+                                    (BYTE *)&NextPointer,
+                                    &ReturnedLength);
+
+        if (!Status || ReturnedLength != sizeof(UINT64))
+        {
+            ShowMessages("err, unable to read memory at %llx\n",
+                         CurrentAddress + Offset);
+            break;
+        }
+
+        //
+        // Cycle detection: stop if we looped back to the head
+        // (common for doubly linked circular lists like LIST_ENTRY)
+        //
+        if (NextPointer == TargetAddress && Index > 0)
+        {
+            ShowMessages("\n(list is circular, returned to head)\n");
+            break;
+        }
+
+        CurrentAddress = NextPointer;
+        Index++;
+    }
+
+    if (Index >= MaxNodes)
+    {
+        ShowMessages("\n(stopped after %llx nodes; use 'l Count' to see more)\n",
+                     MaxNodes);
+    }
+}
