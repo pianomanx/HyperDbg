@@ -18,6 +18,29 @@
 extern BOOLEAN g_IsHyperTraceModuleLoaded;
 extern BOOLEAN g_IsSerialConnectedToRemoteDebuggee;
 
+//
+// Stop event: signaled when '!pt pause' is run so the trace thread wakes up
+// and stops waiting for the target process to exit.
+//
+static HANDLE g_PtTraceStopEvent = NULL;
+
+/**
+ * @brief Argument block passed to the background trace thread
+ */
+typedef struct _PT_TRACE_THREAD_ARGS
+{
+    char    Path[MAX_PATH];
+    char    Function[256];
+    BOOLEAN Packets;
+    int     PinCore;
+    UINT32  ProcessId;
+    UINT32  ThreadId;
+    char    PName[MAX_PATH];
+    BOOLEAN HasPath;
+    BOOLEAN HasFunction;
+    BOOLEAN HasPName;
+} PT_TRACE_THREAD_ARGS;
+
 /**
  * @brief help of the !pt command
  *
@@ -235,10 +258,8 @@ CommandPtSendPause()
     {
         return FALSE;
     }
-    else
-    {
-        return TRUE;
-    }
+
+    return TRUE;
 }
 
 /**
@@ -538,11 +559,20 @@ CommandPtRunAndTraceCore(PROCESS_INFORMATION * Process,
     }
 
     //
-    // Wait for the target process to exit before decoding the trace
+    // Wait for the target process to exit OR for '!pt pause' to be called,
+    // whichever occurs first
     //
-    WaitForSingleObject(Process->hProcess, INFINITE);
+    if (g_PtTraceStopEvent != NULL)
+    {
+        HANDLE WaitHandles[2] = {Process->hProcess, g_PtTraceStopEvent};
+        WaitForMultipleObjects(2, WaitHandles, FALSE, INFINITE);
+    }
+    else
+    {
+        WaitForSingleObject(Process->hProcess, INFINITE);
+    }
 
-    ShowMessages("[+] target exited, decoding trace\n");
+    ShowMessages("[+] target exited or trace stopped, decoding trace\n");
 
     //
     // Pause PT so that the buffers are not being written to while we decode them
@@ -806,6 +836,137 @@ CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, 
         CommandPtRunAndTraceByPname(PName, Function, Packets, PinCore);
     else
         ShowMessages("[-] no path, PID, TID, or process name specified\n");
+}
+
+/**
+ * @brief Thread procedure: calls CommandPtRunAndTrace, then cleans up the
+ *        stop event so a new trace can be started.
+ *
+ * @param Param  Heap-allocated PT_TRACE_THREAD_ARGS freed before returning
+ *
+ * @return DWORD
+ */
+static DWORD WINAPI
+PtTraceThreadProc(LPVOID Param)
+{
+    PT_TRACE_THREAD_ARGS * Args = (PT_TRACE_THREAD_ARGS *)Param;
+
+    CommandPtRunAndTrace(
+        Args->HasPath ? Args->Path : NULL,
+        Args->HasFunction ? Args->Function : NULL,
+        Args->Packets,
+        Args->PinCore,
+        Args->ProcessId,
+        Args->ThreadId,
+        Args->HasPName ? Args->PName : NULL);
+
+    free(Args);
+
+    //
+    // Release the stop event so the next '!pt enable ...' can create a fresh one
+    //
+    if (g_PtTraceStopEvent != NULL)
+    {
+        CloseHandle(g_PtTraceStopEvent);
+        g_PtTraceStopEvent = NULL;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Spawn a background thread to run CommandPtRunAndTrace
+ *
+ * @details Creates an auto-reset stop event that is signaled when '!pt pause'
+ *          is issued, waking the trace thread from its wait.  The thread owns
+ *          both the argument block and the event and cleans them up on exit.
+ *
+ * @param Path       Executable path, or NULL
+ * @param Function   Symbol name for IP filter, or NULL
+ * @param Packets    TRUE \u2192 raw packets; FALSE \u2192 instructions
+ * @param PinCore    Logical core to pin, or < 0 for unpinned
+ * @param ProcessId  PID of an existing process, or 0
+ * @param ThreadId   TID of an existing thread, or 0
+ * @param PName      Process name to search for, or NULL
+ *
+ * @return BOOLEAN TRUE if the thread was successfully launched
+ */
+static BOOLEAN
+CommandPtLaunchTraceThread(const CHAR * Path,
+                           const CHAR * Function,
+                           BOOLEAN      Packets,
+                           int          PinCore,
+                           UINT32       ProcessId,
+                           UINT32       ThreadId,
+                           const CHAR * PName)
+{
+    PT_TRACE_THREAD_ARGS * Args;
+    HANDLE                 Thread;
+
+    if (g_PtTraceStopEvent != NULL)
+    {
+        ShowMessages("err, a trace is already running; use '!pt pause' to stop it first\n");
+        return FALSE;
+    }
+
+    //
+    // Auto-reset event: consumed by WaitForMultipleObjects when signaled
+    //
+    g_PtTraceStopEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+    if (g_PtTraceStopEvent == NULL)
+    {
+        ShowMessages("[-] cannot create stop event (error 0x%x)\n", GetLastError());
+        return FALSE;
+    }
+
+    Args = (PT_TRACE_THREAD_ARGS *)calloc(1, sizeof(PT_TRACE_THREAD_ARGS));
+
+    if (Args == NULL)
+    {
+        ShowMessages("[-] out of memory\n");
+        CloseHandle(g_PtTraceStopEvent);
+        g_PtTraceStopEvent = NULL;
+        return FALSE;
+    }
+
+    if (Path != NULL)
+    {
+        strcpy_s(Args->Path, sizeof(Args->Path), Path);
+        Args->HasPath = TRUE;
+    }
+
+    if (Function != NULL)
+    {
+        strcpy_s(Args->Function, sizeof(Args->Function), Function);
+        Args->HasFunction = TRUE;
+    }
+
+    Args->Packets   = Packets;
+    Args->PinCore   = PinCore;
+    Args->ProcessId = ProcessId;
+    Args->ThreadId  = ThreadId;
+
+    if (PName != NULL)
+    {
+        strcpy_s(Args->PName, sizeof(Args->PName), PName);
+        Args->HasPName = TRUE;
+    }
+
+    Thread = CreateThread(NULL, 0, PtTraceThreadProc, Args, 0, NULL);
+
+    if (Thread == NULL)
+    {
+        ShowMessages("[-] cannot create trace thread (error 0x%x)\n", GetLastError());
+        CloseHandle(g_PtTraceStopEvent);
+        g_PtTraceStopEvent = NULL;
+        free(Args);
+        return FALSE;
+    }
+
+    ShowMessages("[*] trace thread launched (TID %u); run '!pt pause' to stop early\n", GetThreadId(Thread));
+    CloseHandle(Thread); // detach — thread owns its own lifetime
+    return TRUE;
 }
 
 /**
@@ -1107,22 +1268,22 @@ CommandPtParseEnable(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
     if (HasPath)
     {
         ShowMessages("  Running '%s' on core: %llx\n", Path.c_str(), PtRequest->CoreId);
-        CommandPtRunAndTrace(Path.c_str(), NULL, FALSE, PtRequest->CoreId, 0, 0, NULL);
+        CommandPtLaunchTraceThread(Path.c_str(), NULL, FALSE, PtRequest->CoreId, 0, 0, NULL);
     }
     else if (HasPid)
     {
         ShowMessages("  Tracing pid 0x%llx on core: %llx\n", Pid, PtRequest->CoreId);
-        CommandPtRunAndTrace(NULL, NULL, FALSE, PtRequest->CoreId, (UINT32)Pid, 0, NULL);
+        CommandPtLaunchTraceThread(NULL, NULL, FALSE, PtRequest->CoreId, (UINT32)Pid, 0, NULL);
     }
     else if (HasTid)
     {
         ShowMessages("  Tracing tid 0x%llx on core: %llx\n", Tid, PtRequest->CoreId);
-        CommandPtRunAndTrace(NULL, NULL, FALSE, PtRequest->CoreId, 0, (UINT32)Tid, NULL);
+        CommandPtLaunchTraceThread(NULL, NULL, FALSE, PtRequest->CoreId, 0, (UINT32)Tid, NULL);
     }
     else if (HasPname)
     {
         ShowMessages("  Tracing pname '%s' on core: %llx\n", Pname.c_str(), PtRequest->CoreId);
-        CommandPtRunAndTrace(NULL, NULL, FALSE, PtRequest->CoreId, 0, 0, Pname.c_str());
+        CommandPtLaunchTraceThread(NULL, NULL, FALSE, PtRequest->CoreId, 0, 0, Pname.c_str());
     }
 }
 
@@ -1603,9 +1764,12 @@ CommandPt(vector<CommandToken> CommandTokens, string Command)
         }
 
         //
-        // Parse and display pause options for !pt pause command
+        // Wake the trace thread (if any) that is waiting for the target process
         //
-        CommandPtSendPause();
+        if (g_PtTraceStopEvent != NULL)
+        {
+            SetEvent(g_PtTraceStopEvent);
+        }
     }
     else if (CompareLowerCaseStrings(CommandTokens.at(1), "resume"))
     {
