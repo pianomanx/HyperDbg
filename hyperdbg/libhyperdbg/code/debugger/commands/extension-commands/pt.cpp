@@ -651,7 +651,7 @@ CommandPtRunAndTraceByPath(const CHAR * Path, const CHAR * Function, BOOLEAN Pac
 
     Startup.cb = sizeof(Startup);
 
-    if (!CreateProcessA(Path, NULL, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &Startup, &Process))
+    if (!CreateProcessA(Path, NULL, NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NEW_CONSOLE, NULL, NULL, &Startup, &Process))
     {
         ShowMessages("[-] cannot launch '%s' (error 0x%x)\n", Path, GetLastError());
         return;
@@ -1826,9 +1826,4 @@ CommandPt(vector<CommandToken> CommandTokens, string Command)
                      GetCaseSensitiveStringFromCommandToken(CommandTokens.at(0)).c_str());
         CommandPtHelp();
     }
-
-    //
-    // Send the PT request to the debugger
-    //
-    CommandPtSendRequest(&PtRequest);
 }
