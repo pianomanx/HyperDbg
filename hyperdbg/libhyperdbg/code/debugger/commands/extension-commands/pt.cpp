@@ -728,8 +728,60 @@ CommandPtRunAndTraceByTid(UINT32 ThreadId, const CHAR * Function, BOOLEAN Packet
 }
 
 /**
+ * @brief Search for a running process by name and trace it
+ *
+ * @param PName     Process name to search for (e.g. "notepad.exe")
+ * @param Function  Symbol name to narrow the IP filter, or NULL for whole .text
+ * @param Packets   TRUE → decode raw packets; FALSE → decode instructions
+ * @param PinCore   ≥ 0 → pin to that logical core; < 0 → unpinned
+ *
+ * @return VOID
+ */
+static VOID
+CommandPtRunAndTraceByPname(const CHAR * PName, const CHAR * Function, BOOLEAN Packets, int PinCore)
+{
+    HANDLE         Snapshot  = INVALID_HANDLE_VALUE;
+    PROCESSENTRY32 Entry     = {};
+    UINT32         ProcessId = 0;
+
+    Entry.dwSize = sizeof(PROCESSENTRY32);
+
+    Snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+
+    if (Snapshot == INVALID_HANDLE_VALUE)
+    {
+        ShowMessages("[-] cannot enumerate processes (error 0x%x)\n", GetLastError());
+        return;
+    }
+
+    if (Process32First(Snapshot, &Entry))
+    {
+        do
+        {
+            if (_stricmp(Entry.szExeFile, PName) == 0)
+            {
+                ProcessId = Entry.th32ProcessID;
+                break;
+            }
+        } while (Process32Next(Snapshot, &Entry));
+    }
+
+    CloseHandle(Snapshot);
+
+    if (ProcessId == 0)
+    {
+        ShowMessages("[-] cannot find a running process named '%s'\n", PName);
+        return;
+    }
+
+    ShowMessages("[+] found '%s' at pid 0x%x\n", PName, ProcessId);
+
+    CommandPtRunAndTraceByPid(ProcessId, Function, Packets, PinCore);
+}
+
+/**
  * @brief Wrapper: dispatch to the appropriate trace helper based on whichever
- *        selector (Path, ProcessId, ThreadId) is provided
+ *        selector (Path, ProcessId, ThreadId, PName) is provided
  *
  * @param Path       Executable path, or NULL
  * @param Function   Symbol name for IP filter, or NULL
@@ -737,11 +789,12 @@ CommandPtRunAndTraceByTid(UINT32 ThreadId, const CHAR * Function, BOOLEAN Packet
  * @param PinCore    Logical core to pin the target to, or < 0 for unpinned
  * @param ProcessId  PID of an existing process, or 0
  * @param ThreadId   TID of an existing thread, or 0
+ * @param PName      Process name to search for, or NULL
  *
  * @return VOID
  */
 static VOID
-CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, int PinCore, UINT32 ProcessId, UINT32 ThreadId)
+CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, int PinCore, UINT32 ProcessId, UINT32 ThreadId, const CHAR * PName)
 {
     if (Path != NULL)
         CommandPtRunAndTraceByPath(Path, Function, Packets, PinCore);
@@ -749,8 +802,10 @@ CommandPtRunAndTrace(const CHAR * Path, const CHAR * Function, BOOLEAN Packets, 
         CommandPtRunAndTraceByTid(ThreadId, Function, Packets, PinCore);
     else if (ProcessId != 0)
         CommandPtRunAndTraceByPid(ProcessId, Function, Packets, PinCore);
+    else if (PName != NULL)
+        CommandPtRunAndTraceByPname(PName, Function, Packets, PinCore);
     else
-        ShowMessages("[-] no path, PID, or TID specified\n");
+        ShowMessages("[-] no path, PID, TID, or process name specified\n");
 }
 
 /**
@@ -1052,17 +1107,22 @@ CommandPtParseEnable(vector<CommandToken> & CommandTokens, HYPERTRACE_PT_OPERATI
     if (HasPath)
     {
         ShowMessages("  Running '%s' on core: %llx\n", Path.c_str(), PtRequest->CoreId);
-        CommandPtRunAndTrace(Path.c_str(), NULL, FALSE, PtRequest->CoreId, 0, 0);
+        CommandPtRunAndTrace(Path.c_str(), NULL, FALSE, PtRequest->CoreId, 0, 0, NULL);
     }
     else if (HasPid)
     {
         ShowMessages("  Tracing pid 0x%llx on core: %llx\n", Pid, PtRequest->CoreId);
-        CommandPtRunAndTrace(NULL, NULL, FALSE, PtRequest->CoreId, (UINT32)Pid, 0);
+        CommandPtRunAndTrace(NULL, NULL, FALSE, PtRequest->CoreId, (UINT32)Pid, 0, NULL);
     }
     else if (HasTid)
     {
         ShowMessages("  Tracing tid 0x%llx on core: %llx\n", Tid, PtRequest->CoreId);
-        CommandPtRunAndTrace(NULL, NULL, FALSE, PtRequest->CoreId, 0, (UINT32)Tid);
+        CommandPtRunAndTrace(NULL, NULL, FALSE, PtRequest->CoreId, 0, (UINT32)Tid, NULL);
+    }
+    else if (HasPname)
+    {
+        ShowMessages("  Tracing pname '%s' on core: %llx\n", Pname.c_str(), PtRequest->CoreId);
+        CommandPtRunAndTrace(NULL, NULL, FALSE, PtRequest->CoreId, 0, 0, Pname.c_str());
     }
 }
 
