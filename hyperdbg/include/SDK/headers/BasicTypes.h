@@ -105,6 +105,16 @@ typedef HANDLE * PHANDLE;
 typedef PVOID   LPVOID;
 typedef DWORD * LPDWORD;
 
+// Pointer aliases for the base integer types (provided by the Windows SDK on Win32)
+typedef LONG *   PLONG;
+typedef ULONG *  PULONG;
+typedef SHORT *  PSHORT;
+typedef USHORT * PUSHORT;
+typedef CHAR *   PCHAR;
+typedef UCHAR *  PUCHAR;
+typedef DWORD *  PDWORD;
+typedef WORD *   PWORD;
+
 #endif
 
 #define NULL_ZERO   0
