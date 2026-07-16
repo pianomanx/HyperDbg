@@ -11,9 +11,15 @@ New release of the HyperDbg Debugger.
 - Added a new 'dl' command to traverse linked lists using virtual addresses, thanks to [@FallinBinary](https://github.com/FallinBinary) ([link](https://docs.hyperdbg.org/commands/debugging-commands/dl))([link](https://github.com/HyperDbg/HyperDbg/pull/635))
 - Added a new '!dl' command to traverse linked lists using physical addresses, thanks to [@FallinBinary](https://github.com/FallinBinary) ([link](https://docs.hyperdbg.org/commands/extension-commands/dl))([link](https://github.com/HyperDbg/HyperDbg/pull/635))
 - Exported SDK API for traversing linked lists (using virtual and physical memory) ([link](https://github.com/HyperDbg/HyperDbg/pull/635))
+- Added 'pname' to the '!pt' command ([link](https://github.com/HyperDbg/HyperDbg/commit/00c81606fac70d18e7f61fd6509cac74662b116b))
+- Added '!pt' initialization to a separate thread ([link](https://github.com/HyperDbg/HyperDbg/commit/07630fc05ac8501602a79707b51d9ebe62b70c0c))
+- Added new definitions for GCC Linux compilation ([link](https://github.com/HyperDbg/HyperDbg/commit/4d398662ce631c778fb069460da653e8c24e9a94))([link](https://github.com/HyperDbg/HyperDbg/commit/ffc2595941e54f34add73ccf35b9c1b90a37a0a8))
+- Added mitigation for hypervisor crash in a non- long mode RIP overflow ([link](https://github.com/HyperDbg/HyperDbg/pull/642))
 
 ### Changed
-- 
+- Fix the double-enable error of the '!pt' command and create a new window for the suspended process ([link](https://github.com/HyperDbg/HyperDbg/commit/01b6f1ca32eb437e7faad327c853b5eb5131da01))
+- Fix creating a new window for the suspended process in the '!pt' command ([link](https://github.com/HyperDbg/HyperDbg/commit/01b6f1ca32eb437e7faad327c853b5eb5131da01))
+- Compiling user-mode KD functions on Linux ([link](https://github.com/HyperDbg/HyperDbg/commit/2a2425dc68a62bd59331b94d20d7881a1756c472))
 
 ## [0.21.0.0] - 2026-07-05
 New release of the HyperDbg Debugger.
