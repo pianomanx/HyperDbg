@@ -23,6 +23,8 @@ You can follow **HyperDbg** on **[Twitter](https://twitter.com/HyperDbg)** or **
 
 <p align="center"><a href="https://hyperdbg.org/"><img align="center" width="600" height="500" src="https://raw.githubusercontent.com/HyperDbg/graphics/master/Art%20Board/Artboard%201.png" alt="HyperDbg Debugger"></a></br></p>
 
+### Core Capabilities
+
 **HyperDbg** provides a wide range of advanced debugging features, including several types of [EPT-based hidden hooks](https://docs.hyperdbg.org/commands/extension-commands/epthook). It can emulate hardware data breakpoints for [monitoring memory](https://docs.hyperdbg.org/commands/extension-commands/monitor) reads, writes, and executions at specific address ranges while remaining transparent to both the operating system and target applications. Unlike [hardware debug registers](https://docs.hyperdbg.org/commands/extension-commands/dr), these monitoring facilities are not limited by the number of available debug registers or size constraints. Moreover, **HyperDbg** is capable of [tracking execution](https://docs.hyperdbg.org/commands/debugging-commands/i) across different privilege levels, including transitions from user mode to kernel mode (e.g., through system calls, heaven's gate, faults, [exceptions](https://docs.hyperdbg.org/commands/extension-commands/exception), and [interrupts](https://docs.hyperdbg.org/commands/extension-commands/interrupt)), from the kernel to device drivers, and from kernel mode back to user mode, enabling comprehensive analysis of the entire execution flow.
 
 In addition, **HyperDbg** supports [system call hooking](https://docs.hyperdbg.org/commands/extension-commands/syscall), [control flow tracing](https://docs.hyperdbg.org/commands/extension-commands/pt) through hardware tracing features, and comprehensive monitoring of I/O operations, including both [Memory-Mapped I/O (MMIO)](https://docs.hyperdbg.org/commands/extension-commands/monitor) and [Port-Mapped I/O](https://docs.hyperdbg.org/commands/extension-commands/ioin) ([PMIO](https://docs.hyperdbg.org/commands/extension-commands/ioout)), enabling detailed analysis of device interactions and external peripherals.
@@ -31,7 +33,7 @@ Beyond that, **HyperDbg** includes a large collection of additional [events](htt
 
 **HyperDbg** is designed to operate as stealthily as possible. It does not use any debugging APIs to debug the operating system or any application, so classic anti-debugging methods will not detect it. It also includes a [specialized module](https://fosdem.org/2026/schedule/event/CDPRDX-invisible_hypervisors_debugging_with_hyperdbg/) designed to enhance its stealth capabilities. This module monitors attempts to detect the presence of a hypervisor or debugger and applies various techniques to first report and then mitigate or bypass such detection mechanisms. Although complete transparency cannot be guaranteed in all scenarios, these features significantly increase the difficulty of detecting **HyperDbg**, making it substantially harder for applications, packers, software protectors, malware, anti-cheat systems, and other security mechanisms to identify its presence.
 
-## Why HyperDbg?
+### Why HyperDbg?
 
 HyperDbg is harder to set up and use, and also requires deeper low-level system knowledge compared to traditional debuggers. However, it provides two major advantages:
 
