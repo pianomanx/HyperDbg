@@ -78,8 +78,9 @@ TransparentHideDebuggerWrapper(DEBUGGER_HIDE_AND_TRANSPARENT_DEBUGGER_MODE * Tra
     //
     // VMX callbacks
     //
-    HyperevadeCallbacks.HvHandleTrapFlag             = HvHandleTrapFlag;
-    HyperevadeCallbacks.EventInjectGeneralProtection = EventInjectGeneralProtection;
+    HyperevadeCallbacks.HvHandleTrapFlag                       = HvHandleTrapFlag;
+    HyperevadeCallbacks.HvHandleNonLongModeResumingRipOverflow = HvHandleNonLongModeResumingRipOverflow;
+    HyperevadeCallbacks.EventInjectGeneralProtection           = EventInjectGeneralProtection;
 
     //
     // Call the hyperevade hide debugger function

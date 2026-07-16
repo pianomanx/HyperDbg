@@ -297,10 +297,9 @@ HvFillGuestSelectorData(PVOID GdtBase, UINT32 SegmentRegister, UINT16 Selector)
 VOID
 HvResumeToNextInstruction()
 {
-    UINT64                    ResumeRIP             = NULL64_ZERO;
-    UINT64                    CurrentRIP            = NULL64_ZERO;
-    SIZE_T                    ExitInstructionLength = 0;
-    VMX_SEGMENT_ACCESS_RIGHTS Cs                    = {0};
+    UINT64 ResumeRIP             = NULL64_ZERO;
+    UINT64 CurrentRIP            = NULL64_ZERO;
+    SIZE_T ExitInstructionLength = 0;
 
     VmxVmread64P(VMCS_GUEST_RIP, &CurrentRIP);
     VmxVmread64P(VMCS_VMEXIT_INSTRUCTION_LENGTH, &ExitInstructionLength);
@@ -308,14 +307,11 @@ HvResumeToNextInstruction()
     ResumeRIP = CurrentRIP + ExitInstructionLength;
 
     //
-    // If the processor not in the long mode, just going to the next instruction may cause guest
-    // invalid state in case of RIP is overflown
+    // If we are in transparent-mode, then we need to handle the VMRESUME artifacts
     //
-    VmxVmread32P(VMCS_GUEST_CS_ACCESS_RIGHTS, &Cs.AsUInt);
-
-    if (!Cs.LongMode)
+    if (g_CheckForFootprints)
     {
-        ResumeRIP &= 0xFFFFFFFF;
+        TransparentCheckAndMitigateVmResumeFootprints(&ResumeRIP);
     }
 
     VmxVmwrite64(VMCS_GUEST_RIP, ResumeRIP);
@@ -1786,10 +1782,34 @@ HvHandleTrapFlag()
         // We also must clear this flag in case of instruction emulation to achieve
         // correctness of the single-step exception
         //
-        if (InterruptibilityState.BlockingByMovSs)
+        if (InterruptibilityState.BlockingByMovSs || InterruptibilityState.BlockingBySti)
         {
             InterruptibilityState.BlockingByMovSs = 0;
+            InterruptibilityState.BlockingBySti   = 0;
             HvSetInterruptibilityState(InterruptibilityState.AsUInt);
         }
+    }
+}
+
+/**
+ * @brief Handle the case of non-long mode resuming of RIP overflow
+ * @param ResumeRIP
+ *
+ * @return VOID
+ */
+VOID
+HvHandleNonLongModeResumingRipOverflow(UINT64 * ResumeRIP)
+{
+    VMX_SEGMENT_ACCESS_RIGHTS Cs = {0};
+
+    //
+    // If the processor not in the long mode, just going to the next instruction may cause guest
+    // invalid state in case of RIP is overflown
+    //
+    VmxVmread32P(VMCS_GUEST_CS_ACCESS_RIGHTS, &Cs.AsUInt);
+
+    if (!Cs.LongMode)
+    {
+        *ResumeRIP = *ResumeRIP & 0xFFFFFFFF;
     }
 }
