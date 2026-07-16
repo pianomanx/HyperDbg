@@ -297,14 +297,26 @@ HvFillGuestSelectorData(PVOID GdtBase, UINT32 SegmentRegister, UINT16 Selector)
 VOID
 HvResumeToNextInstruction()
 {
-    UINT64 ResumeRIP             = NULL64_ZERO;
-    UINT64 CurrentRIP            = NULL64_ZERO;
-    SIZE_T ExitInstructionLength = 0;
+    UINT64                    ResumeRIP             = NULL64_ZERO;
+    UINT64                    CurrentRIP            = NULL64_ZERO;
+    SIZE_T                    ExitInstructionLength = 0;
+    VMX_SEGMENT_ACCESS_RIGHTS Cs                    = {0};
 
     VmxVmread64P(VMCS_GUEST_RIP, &CurrentRIP);
     VmxVmread64P(VMCS_VMEXIT_INSTRUCTION_LENGTH, &ExitInstructionLength);
 
     ResumeRIP = CurrentRIP + ExitInstructionLength;
+
+    //
+    // If the processor not in the long mode, just going to the next instruction may cause guest
+    // invalid state in case of RIP is overflown
+    //
+    VmxVmread32P(VMCS_GUEST_CS_ACCESS_RIGHTS, &Cs.AsUInt);
+
+    if (!Cs.LongMode)
+    {
+        ResumeRIP &= 0xFFFFFFFF;
+    }
 
     VmxVmwrite64(VMCS_GUEST_RIP, ResumeRIP);
 }
