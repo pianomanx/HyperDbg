@@ -344,6 +344,32 @@ PlatformCloseHandle(HANDLE Handle)
 }
 
 /**
+ * @brief Platform independent wrapper for CreateThread
+ *
+ * @param Routine thread entry point
+ * @param Param   parameter passed to the thread routine
+ * @return HANDLE to the new thread, or NULL on failure
+ */
+HANDLE
+PlatformCreateThread(PLATFORM_THREAD_ROUTINE Routine, PVOID Param)
+{
+#if defined(_WIN32)
+    return CreateThread(NULL, 0, Routine, Param, 0, NULL);
+#elif defined(__linux__)
+    //
+    // TODO: back this with pthread_create when the Linux kernel-debugger
+    //       transport is implemented. Returning NULL leaves the listening
+    //       thread unstarted, which is all the callers check for.
+    //
+    (void)Routine;
+    (void)Param;
+    return NULL;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
  * @brief Platform independent wrapper for GetLastError
  */
 DWORD

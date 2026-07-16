@@ -70,6 +70,18 @@ BOOLEAN
 PlatformCloseHandle(HANDLE Handle);
 
 //
+// THREADS
+//
+// Mirrors the Win32 thread routine signature so the thread functions
+// themselves stay unchanged; the default attributes/stack size and the
+// thread-id out-param of CreateThread are not used by any caller.
+//
+typedef DWORD(WINAPI * PLATFORM_THREAD_ROUTINE)(PVOID Param);
+
+HANDLE
+PlatformCreateThread(PLATFORM_THREAD_ROUTINE Routine, PVOID Param);
+
+//
 // LAST OS ERROR
 //
 // TODO (linux, correctness): the wrappers below only unify the success/failure
