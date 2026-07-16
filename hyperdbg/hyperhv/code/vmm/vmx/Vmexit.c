@@ -347,16 +347,6 @@ VmxVmexitHandler(_Inout_ PGUEST_REGS GuestRegs)
     //
     if (!VCpu->VmxoffState.IsVmxoffExecuted && VCpu->IncrementRip)
     {
-        //
-        // If we are in transparent-mode, then we need to handle the trap flag as the result
-        // of an anti-hypervisor technique of using the trap flag after a VM-exit
-        // to detect the hypervisor
-        //
-        if (g_CheckForFootprints)
-        {
-            TransparentCheckAndTrapFlagAfterVmexit();
-        }
-
         HvResumeToNextInstruction();
     }
 
