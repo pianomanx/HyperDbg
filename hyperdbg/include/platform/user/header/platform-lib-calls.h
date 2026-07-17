@@ -43,6 +43,24 @@ INT
 PlatformSprintf(char * Buffer, SIZE_T BufferSize, const char * Format, ...);
 
 //
+// BOUNDED STRING LENGTH
+//
+SIZE_T
+PlatformStrnlen(const char * Str, SIZE_T MaxLength);
+
+//
+// SLEEP (milliseconds)
+//
+VOID
+PlatformSleep(DWORD Milliseconds);
+
+//
+// DEBUG BREAK (raise a breakpoint trap in the calling process)
+//
+VOID
+PlatformDebugBreak(VOID);
+
+//
 // HIGH-RESOLUTION PERFORMANCE COUNTER
 //
 BOOLEAN

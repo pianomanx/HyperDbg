@@ -134,7 +134,7 @@ ReadIrpBasedBuffer()
             //
             if ((OperationCode & OPERATION_MANDATORY_DEBUGGEE_BIT) == 0)
             {
-                Sleep(DefaultSpeedOfReadingKernelMessages); // we're not trying to eat all of the CPU ;)
+                PlatformSleep(DefaultSpeedOfReadingKernelMessages); // we're not trying to eat all of the CPU ;)
             }
 
             switch (OperationCode)

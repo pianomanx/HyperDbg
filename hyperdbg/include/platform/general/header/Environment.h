@@ -91,7 +91,4 @@ typedef void * HMODULE;
 #    define CTRL_LOGOFF_EVENT   5
 #    define CTRL_SHUTDOWN_EVENT 6
 
-// Win32 Sleep(milliseconds) -> POSIX usleep(microseconds)
-#    define Sleep(Milliseconds) usleep((useconds_t)(Milliseconds) * 1000)
-
 #endif // HYPERDBG_ENV_LINUX

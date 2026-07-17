@@ -118,9 +118,9 @@ CommandPcitree(vector<CommandToken> CommandTokens, string Command)
                              PcitreePacket.DeviceInfoList[i].Function,
                              PcitreePacket.DeviceInfoList[i].ConfigSpace.VendorId,
                              PcitreePacket.DeviceInfoList[i].ConfigSpace.DeviceId,
-                             strnlen_s(CurrentVendorName, PCI_NAME_STR_LENGTH),
+                             PlatformStrnlen(CurrentVendorName, PCI_NAME_STR_LENGTH),
                              CurrentVendorName,
-                             strnlen_s(CurrentDeviceName, PCI_NAME_STR_LENGTH),
+                             PlatformStrnlen(CurrentDeviceName, PCI_NAME_STR_LENGTH),
                              CurrentDeviceName
 
                 );

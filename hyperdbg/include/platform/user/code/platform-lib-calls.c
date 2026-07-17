@@ -18,6 +18,8 @@
 #    include <sys/syscall.h>
 #    include <errno.h>
 #    include <stdint.h>
+#    include <string.h>
+#    include <signal.h>
 #endif // defined(__linux__)
 
 /**
@@ -140,6 +142,59 @@ PlatformSprintf(char * Buffer, SIZE_T BufferSize, const char * Format, ...)
 #endif
     va_end(Args);
     return Result;
+}
+
+/**
+ * @brief Platform independent wrapper for strnlen_s / strnlen
+ *
+ * @param Str string to measure (must not be NULL)
+ * @param MaxLength maximum number of characters to examine
+ * @return SIZE_T length of the string, capped at MaxLength
+ */
+SIZE_T
+PlatformStrnlen(const char * Str, SIZE_T MaxLength)
+{
+#if defined(_WIN32)
+    return strnlen_s(Str, MaxLength);
+#elif defined(__linux__)
+    return strnlen(Str, MaxLength);
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for Sleep / usleep
+ *
+ * @param Milliseconds number of milliseconds to suspend the calling thread
+ */
+VOID
+PlatformSleep(DWORD Milliseconds)
+{
+#if defined(_WIN32)
+    Sleep(Milliseconds);
+#elif defined(__linux__)
+    usleep((useconds_t)Milliseconds * 1000);
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for DebugBreak / raise(SIGTRAP)
+ *
+ * @details Delivers a breakpoint trap to the calling process.
+ */
+VOID
+PlatformDebugBreak(VOID)
+{
+#if defined(_WIN32)
+    DebugBreak();
+#elif defined(__linux__)
+    raise(SIGTRAP);
+#else
+#    error "Unsupported platform"
+#endif
 }
 
 /**
