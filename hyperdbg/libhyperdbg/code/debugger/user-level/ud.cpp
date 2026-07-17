@@ -548,7 +548,7 @@ UdAttachToProcess(UINT32        TargetPid,
                 //
                 // ShowMessages("entrypoint is not reached, continue sending the request...\n");
 
-                Sleep(1000);
+                PlatformSleep(1000);
                 continue;
             }
             else

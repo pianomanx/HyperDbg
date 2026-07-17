@@ -563,7 +563,7 @@ HyperDbgUnloadKd()
     //
     // Wait for a while to make sure that all IRP pending are completed and the driver is ready to be unloaded
     //
-    Sleep(1000);
+    PlatformSleep(1000);
 
     //
     // Send IRP_MJ_CLOSE to driver to terminate Vmxs
