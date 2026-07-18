@@ -50,7 +50,7 @@ User-mode abstractions in `include/platform/user/` (`header/` = interface,
 | `platform-lib-calls.{h,c}` | OS lib calls: events, handles, threads, sprintf/vsnprintf, perf counters, get-last-error, process/thread ids & names, OS version, `strnlen`, `DebugBreak`, zero-memory | Mostly implemented; a few stubbed (see TODO) |
 | `platform-intrinsics.{h,c}` | CPU ops: `rdtsc`/`rdtscp`, interlocked 64-bit ops, bit-test-and-set | Implemented (GCC builtins) |
 | `platform-serial.{h,c}` | Serial byte transport for remote kernel debugging | **Stub** — Linux branch returns false; termios impl TODO |
-| `platform-ioctl.{h,c}` | Local kernel-driver IOCTL interface | **Stub** — no Linux kernel module yet |
+| `platform-ioctl.{h,c}` | Local kernel-driver IOCTL interface (`PlatformDeviceIoControl`) + device open (`PlatformOpenDevice`) | **Stub** — no Linux kernel module yet; `PlatformOpenDevice` returns `INVALID_HANDLE_VALUE` |
 | `platform-signal.{h,c}` | Console control handler (Ctrl-C / Ctrl-Break) | Implemented (blocks signals + `sigwait` thread) |
 
 Kernel-mode equivalents live in `include/platform/kernel/`. Two were extended for
@@ -157,6 +157,22 @@ equivalent, behavior-preserving.
 - `dllmain.cpp` — whole `DllMain` body guarded `#ifdef _WIN32` (Windows DLL loader
   entry point; no Linux equivalent, no callers in our code, body was a no-op). Linux
   TU is intentionally empty.
+- `libhyperdbg.cpp` — the main app (load/unload driver, open device, event loop).
+  Wrapper sweeps: `DeviceIoControl`×5→`PlatformDeviceIoControl`, `GetLastError`×7→`PlatformGetLastError`,
+  `CloseHandle`×4→`PlatformCloseHandle`, `WaitForSingleObject`→`PlatformWaitForSingleObject`,
+  `CreateEvent(NULL,FALSE,FALSE,NULL)`→`PlatformCreateEvent(FALSE,FALSE)`,
+  `CreateThread(...)`→`PlatformCreateThread(fn,NULL)`, and the 2-arg `strcpy_s(g_DriverName, ...)`
+  template form→`PlatformStrCpy(g_DriverName, sizeof(g_DriverName), ...)`. The local-driver
+  device open (`CreateFileA("\\.\HyperDbgDebuggerDevice", ...)`) → new `PlatformOpenDevice`
+  wrapper (see platform-ioctl); the surrounding error-handling block stays at the call site
+  (`ERROR_ACCESS_DENIED`/`ERROR_GEN_FAILURE` added to `Environment.h` so it compiles on Linux).
+  `WindowsSetDebugPrivilege` now resolves via `windows-privilege.c` (see below).
+- `windows-only/windows-privilege.{c,h}` — `WindowsSetDebugPrivilege` was already ported
+  (Windows: token/SeDebugPrivilege; Linux branch: `return TRUE`), just not wired into the
+  Linux build. Added `windows-privilege.c` to `libhyperdbg/CMakeLists.txt` (both the source
+  list and the `LANGUAGE CXX` block); un-guarded its header include in `pch.h` (was
+  `#ifdef _WIN32`, header is Linux-safe); fixed the header's `#ifdef __linux__` SDK include
+  path (`../../../../` → `../../../../../`, it sits one dir deeper in `windows-only/`).
 
 ### User-level debugger
 - `ud.cpp` — wrapper sweep (bucket 1): `DeviceIoControl`→`PlatformDeviceIoControl`,
@@ -183,8 +199,9 @@ equivalent, behavior-preserving.
   (the last two carry `(WCHAR *)` wide-char shim casts).
 - Debugging/extension: `a.cpp`, `dt-struct.cpp`, `k.cpp`, `preactivate.cpp`,
   `prealloc.cpp`, `sleep.cpp`, `track.cpp`, `pci-id.cpp`, `pcicam.cpp`, `pcitree.cpp`.
-- App: `libhyperdbg.cpp`, `messaging.cpp`, `packets.cpp` (`vsprintf_s`→`PlatformVsnprintf`),
+- App: `messaging.cpp`, `packets.cpp` (`vsprintf_s`→`PlatformVsnprintf`),
   `spinlock.cpp` (`_interlockedbittestandset`→`CpuInterlockedBitTestAndSet`).
+  (`libhyperdbg.cpp` itself has its own entry under **App** above.)
 
 ---
 

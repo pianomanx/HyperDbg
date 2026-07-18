@@ -100,4 +100,10 @@ typedef void * HMODULE;
 #    define CREATE_NEW_CONSOLE                0x00000010
 #    define STILL_ACTIVE                      0x00000103
 
+//
+// Win32 system error codes referenced by the shared device-open error handling
+//
+#    define ERROR_ACCESS_DENIED 5
+#    define ERROR_GEN_FAILURE   31
+
 #endif // HYPERDBG_ENV_LINUX

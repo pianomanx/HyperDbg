@@ -182,9 +182,7 @@ typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 //
 // Platform-specific intrinsics
 //
-#ifdef _WIN32
-#    include "platform/user/header/windows-only/windows-privilege.h"
-#endif
+#include "platform/user/header/windows-only/windows-privilege.h"
 
 //
 // PCI IDs
