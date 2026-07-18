@@ -44,7 +44,7 @@ class LALR1Parser:
         # maximum of "Right Hand Side(Rhs)" length
         self.MAXIMUM_RHS_LEN = 0
 
-        self.SPECIAL_TOKENS = ['%', '+', '++', '-', '--', "*", "/", "=", "==", "!=", ",", ";", "(", ")", "{", "}", "|", "||", ">>", ">=", "<<", "<=", "&", "&&", "^", "[", "]"]
+        self.SPECIAL_TOKENS = ['%', '+', '++', '-', '--', '->', '.', "*", "/", "=", "==", "!=", ",", ";", "(", ")", "{", "}", "|", "||", ">>", ">=", "<<", "<=", "&", "&&", "^", "[", "]"]
 
 
 
@@ -231,7 +231,7 @@ class LALR1Parser:
                 self.FunctionsDict[L[0]] = Elements
                 continue
 
-            L = Line.split("->")
+            L = Line.split("->", 1)
             Lhs = L[0]
             Rhs = L[1].split(" ")
 
@@ -241,7 +241,7 @@ class LALR1Parser:
             Idx = 0
    
             for X in Rhs:
-                if X[0] == ".":
+                if X and X[0] == "." and X in self.FunctionsDict:
                     HasMapKeyword = True
                     MapKeywordIdx1 = Idx 
                 elif X[0] == "@":

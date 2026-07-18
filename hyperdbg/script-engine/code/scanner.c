@@ -11,6 +11,8 @@
  */
 #include "pch.h"
 
+static BOOLEAN PreviousTokenCanEndExpression;
+
 /**
  * @brief reads a token from the input string
  *
@@ -132,7 +134,14 @@ GetToken(char * c, char * str)
         }
     case '-':
         *c = sgetc(str);
-        if (*c == '-')
+        if (*c == '>')
+        {
+            strcpy(Token->Value, "->");
+            Token->Type = SPECIAL_TOKEN;
+            *c          = sgetc(str);
+            return Token;
+        }
+        else if (*c == '-')
         {
             strcpy(Token->Value, "--");
             Token->Type = SPECIAL_TOKEN;
@@ -980,7 +989,8 @@ Scan(char * str, char * c)
 
     if (InputIdx <= 1)
     {
-        ReturnEndOfString = FALSE;
+        ReturnEndOfString             = FALSE;
+        PreviousTokenCanEndExpression = FALSE;
     }
 
     if (ReturnEndOfString)
@@ -996,7 +1006,15 @@ Scan(char * str, char * c)
     {
         CurrentTokenIdx = InputIdx - 1;
 
-        Token = GetToken(c, str);
+        if (*c == '.' && PreviousTokenCanEndExpression)
+        {
+            Token       = NewToken(SPECIAL_TOKEN, ".");
+            *c          = sgetc(str);
+        }
+        else
+        {
+            Token = GetToken(c, str);
+        }
 
         if ((int)*c == EOF)
         {
@@ -1028,6 +1046,14 @@ Scan(char * str, char * c)
             }
             continue;
         }
+        PreviousTokenCanEndExpression =
+            Token->Type == GLOBAL_ID || Token->Type == GLOBAL_UNRESOLVED_ID ||
+            Token->Type == LOCAL_ID || Token->Type == LOCAL_UNRESOLVED_ID ||
+            Token->Type == FUNCTION_PARAMETER_ID || Token->Type == REGISTER ||
+            Token->Type == PSEUDO_REGISTER || Token->Type == HEX ||
+            Token->Type == DECIMAL || Token->Type == OCTAL || Token->Type == BINARY ||
+            (Token->Type == SPECIAL_TOKEN &&
+             (!strcmp(Token->Value, ")") || !strcmp(Token->Value, "]")));
         return Token;
     }
 }

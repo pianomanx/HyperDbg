@@ -24,6 +24,95 @@ extern HWDBG_INSTANCE_INFORMATION g_HwdbgInstanceInfo;
 extern BOOLEAN                    g_HwdbgInstanceInfoIsValid;
 extern PVOID                      g_MessageHandler;
 
+typedef struct _STRUCT_DECLARATOR_STATE
+{
+    char *                            Name;
+    unsigned int                      PointerDepth;
+    unsigned int                      Dimensions[16];
+    unsigned int                      DimensionCount;
+    struct _STRUCT_DECLARATOR_STATE * Next;
+} STRUCT_DECLARATOR_STATE, *PSTRUCT_DECLARATOR_STATE;
+
+static PSTRUCT_DECLARATOR_STATE StructDeclarators;
+static PSTRUCT_DECLARATOR_STATE StructDeclaratorsTail;
+static unsigned int             StructPointerDepth;
+static PVARIABLE_TYPE           CurrentStructDefinition;
+static PSCRIPT_ENGINE_TOKEN     LastStructObject;
+static PVARIABLE_TYPE           LastStructObjectType;
+
+static VOID
+ResetStructDeclarators(VOID)
+{
+    while (StructDeclarators)
+    {
+        PSTRUCT_DECLARATOR_STATE Next = StructDeclarators->Next;
+        free(StructDeclarators->Name);
+        free(StructDeclarators);
+        StructDeclarators = Next;
+    }
+    StructDeclaratorsTail  = NULL;
+    StructPointerDepth     = 0;
+}
+
+static PVARIABLE_TYPE
+ApplyStructDeclarator(PVARIABLE_TYPE BaseType, PSTRUCT_DECLARATOR_STATE Declarator)
+{
+    PVARIABLE_TYPE Type = BaseType;
+    unsigned int Index;
+
+    for (Index = 0; Index < Declarator->PointerDepth; Index++)
+    {
+        Type = CreatePointerType(Type);
+        if (!Type)
+        {
+            return NULL;
+        }
+    }
+
+    for (Index = Declarator->DimensionCount; Index > 0; Index--)
+    {
+        Type = CreateArrayType(Type, Declarator->Dimensions[Index - 1]);
+        if (!Type)
+        {
+            return NULL;
+        }
+    }
+    return Type;
+}
+
+static PVARIABLE_TYPE
+PopStructBaseType(PSCRIPT_ENGINE_TOKEN_LIST MatchedStack, PSCRIPT_ENGINE_ERROR_TYPE Error)
+{
+    PVARIABLE_TYPE Type;
+    PSCRIPT_ENGINE_TOKEN TagToken;
+
+    if (MatchedStack->Pointer && Top(MatchedStack)->Type == SCRIPT_VARIABLE_TYPE)
+    {
+        Type = HandleType(MatchedStack);
+        if (Type->Kind == TY_UNKNOWN)
+        {
+            *Error = SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE;
+            return NULL;
+        }
+        return Type;
+    }
+
+    if (!MatchedStack->Pointer)
+    {
+        *Error = SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE;
+        return NULL;
+    }
+
+    TagToken = Pop(MatchedStack);
+    Type     = FindStructType(TagToken->Value);
+    RemoveToken(&TagToken);
+    if (!Type)
+    {
+        *Error = SCRIPT_ENGINE_ERROR_UNKNOWN_STRUCT_TAG;
+    }
+    return Type;
+}
+
 /**
  * @brief Show messages
  *
@@ -344,6 +433,12 @@ ScriptEngineParse(char * str)
 {
     char * ScriptSource = PlatformStrDup(str);
 
+    InitializeTypeContext();
+    ResetStructDeclarators();
+    CurrentStructDefinition = NULL;
+    LastStructObject        = NULL;
+    LastStructObjectType    = NULL;
+
     PSCRIPT_ENGINE_TOKEN_LIST Stack        = NewTokenList();
     PSCRIPT_ENGINE_TOKEN_LIST MatchedStack = NewTokenList();
     PSYMBOL_BUFFER            CodeBuffer   = NewSymbolBuffer();
@@ -408,6 +503,7 @@ ScriptEngineParse(char * str)
         RemoveTokenList(Stack);
         RemoveTokenList(MatchedStack);
         RemoveToken(&CurrentIn);
+        UninitializeTypeContext();
         return (PVOID)CodeBuffer;
     }
 
@@ -690,6 +786,10 @@ ScriptEngineParse(char * str)
     if (TopToken)
         RemoveToken(&TopToken);
 
+    ResetStructDeclarators();
+    if (LastStructObject)
+        RemoveToken(&LastStructObject);
+    UninitializeTypeContext();
     free(ScriptSource);
 
     return (PVOID)CodeBuffer;
@@ -745,7 +845,372 @@ CodeGen(PSCRIPT_ENGINE_TOKEN_LIST MatchedStack, PSYMBOL_BUFFER CodeBuffer, PSCRI
 
     while (TRUE)
     {
-        if (!strcmp(Operator->Value, "@INCLUDE"))
+        if (!strcmp(Operator->Value, "@STRUCT_POINTER"))
+        {
+            StructPointerDepth++;
+        }
+        else if (!strcmp(Operator->Value, "@STRUCT_ARRAY_DIMENSION"))
+        {
+            unsigned long long Dimension;
+            Op0 = Pop(MatchedStack);
+            Dimension = strtoull(Op0->Value, NULL, 0);
+            RemoveToken(&Op0);
+            if (!Dimension || Dimension > UINT32_MAX)
+            {
+                *Error = SCRIPT_ENGINE_ERROR_INVALID_ARRAY_SIZE;
+                break;
+            }
+            if (!StructDeclaratorsTail || StructDeclaratorsTail->DimensionCount >= 16)
+            {
+                *Error = SCRIPT_ENGINE_ERROR_INVALID_ARRAY_SIZE;
+                break;
+            }
+            StructDeclaratorsTail->Dimensions[StructDeclaratorsTail->DimensionCount++] = (unsigned int)Dimension;
+        }
+        else if (!strcmp(Operator->Value, "@STRUCT_DECLARATOR_COMPLETE"))
+        {
+            PSTRUCT_DECLARATOR_STATE Declarator;
+            Op0 = Pop(MatchedStack);
+            Declarator = (PSTRUCT_DECLARATOR_STATE)calloc(1, sizeof(STRUCT_DECLARATOR_STATE));
+            if (!Declarator)
+            {
+                *Error = SCRIPT_ENGINE_ERROR_SYNTAX;
+                break;
+            }
+            Declarator->Name           = PlatformStrDup(Op0->Value);
+            Declarator->PointerDepth   = StructPointerDepth;
+            RemoveToken(&Op0);
+
+            if (StructDeclaratorsTail)
+            {
+                StructDeclaratorsTail->Next = Declarator;
+            }
+            else
+            {
+                StructDeclarators = Declarator;
+            }
+            StructDeclaratorsTail = Declarator;
+            StructPointerDepth    = 0;
+        }
+        else if (!strcmp(Operator->Value, "@STRUCT_FORWARD_DECLARATION"))
+        {
+            Op0 = Pop(MatchedStack);
+            if (!DeclareStructType(Op0->Value))
+            {
+                *Error = SCRIPT_ENGINE_ERROR_SYNTAX;
+            }
+            RemoveToken(&Op0);
+        }
+        else if (!strcmp(Operator->Value, "@STRUCT_DEFINITION_BEGIN"))
+        {
+            Op0 = Pop(MatchedStack);
+            CurrentStructDefinition = FindStructType(Op0->Value);
+            if (CurrentStructDefinition && CurrentStructDefinition->IsComplete)
+            {
+                *Error = SCRIPT_ENGINE_ERROR_DUPLICATE_STRUCT_DEFINITION;
+            }
+            else if (!CurrentStructDefinition)
+            {
+                CurrentStructDefinition = DeclareStructType(Op0->Value);
+            }
+            RemoveToken(&Op0);
+            if (!CurrentStructDefinition)
+            {
+                *Error = SCRIPT_ENGINE_ERROR_SYNTAX;
+            }
+        }
+        else if (!strcmp(Operator->Value, "@STRUCT_MEMBER_DECLARATION"))
+        {
+            PVARIABLE_TYPE BaseType = PopStructBaseType(MatchedStack, Error);
+            PSTRUCT_DECLARATOR_STATE Declarator;
+            if (!BaseType)
+            {
+                break;
+            }
+
+            for (Declarator = StructDeclarators; Declarator; Declarator = Declarator->Next)
+            {
+                PVARIABLE_TYPE MemberType = ApplyStructDeclarator(BaseType, Declarator);
+                if (!MemberType)
+                {
+                    *Error = (BaseType->Kind == TY_STRUCT && !BaseType->IsComplete) ?
+                                 SCRIPT_ENGINE_ERROR_INCOMPLETE_TYPE :
+                                 SCRIPT_ENGINE_ERROR_INVALID_ARRAY_SIZE;
+                    break;
+                }
+                if (MemberType->Kind == TY_STRUCT && !MemberType->IsComplete)
+                {
+                    *Error = SCRIPT_ENGINE_ERROR_INCOMPLETE_TYPE;
+                    break;
+                }
+                if (!AddStructMember(CurrentStructDefinition, Declarator->Name, MemberType))
+                {
+                    *Error = SCRIPT_ENGINE_ERROR_DUPLICATE_STRUCT_MEMBER;
+                    break;
+                }
+            }
+            ResetStructDeclarators();
+        }
+        else if (!strcmp(Operator->Value, "@STRUCT_DEFINITION_END"))
+        {
+            if (!CompleteStructType(CurrentStructDefinition))
+            {
+                *Error = SCRIPT_ENGINE_ERROR_INCOMPLETE_TYPE;
+            }
+        }
+        else if (!strcmp(Operator->Value, "@STRUCT_VARIABLE_DECLARATION"))
+        {
+            PVARIABLE_TYPE BaseType;
+            PSTRUCT_DECLARATOR_STATE Declarator;
+
+            if (CurrentStructDefinition && CurrentStructDefinition->IsComplete && !MatchedStack->Pointer)
+            {
+                BaseType = CurrentStructDefinition;
+            }
+            else
+            {
+                BaseType = PopStructBaseType(MatchedStack, Error);
+            }
+            if (!BaseType)
+            {
+                break;
+            }
+
+            for (Declarator = StructDeclarators; Declarator; Declarator = Declarator->Next)
+            {
+                PVARIABLE_TYPE ObjectType = ApplyStructDeclarator(BaseType, Declarator);
+                PSCRIPT_ENGINE_TOKEN IdToken;
+                if (!ObjectType || (ObjectType->Kind == TY_STRUCT && !ObjectType->IsComplete))
+                {
+                    *Error = SCRIPT_ENGINE_ERROR_INCOMPLETE_TYPE;
+                    break;
+                }
+                IdToken = NewToken(LOCAL_UNRESOLVED_ID, Declarator->Name);
+                if (GetLocalIdentifierVal(IdToken) != -1)
+                {
+                    RemoveToken(&IdToken);
+                    *Error = SCRIPT_ENGINE_ERROR_SYNTAX;
+                    break;
+                }
+                NewLocalIdentifier(IdToken, (unsigned int)ObjectType->Size);
+                SetLocalIdentifierVariableType(IdToken, ObjectType);
+                if (LastStructObject)
+                    RemoveToken(&LastStructObject);
+                IdToken->Type        = LOCAL_ID;
+                IdToken->VariableType = ObjectType;
+                LastStructObject     = CopyToken(IdToken);
+                LastStructObjectType = ObjectType;
+                RemoveToken(&IdToken);
+            }
+            ResetStructDeclarators();
+            CurrentStructDefinition = NULL;
+        }
+        else if (!strcmp(Operator->Value, "@STRUCT_INITIALIZER_BEGIN"))
+        {
+            Push(MatchedStack, CopyToken(Operator));
+        }
+        else if (!strcmp(Operator->Value, "@STRUCT_INITIALIZER_END"))
+        {
+            PSCRIPT_ENGINE_TOKEN Values[64];
+            unsigned int Count = 0;
+            PSTRUCT_MEMBER Member;
+            PSYMBOL Symbol;
+
+            while (MatchedStack->Pointer && strcmp(Top(MatchedStack)->Value, "@STRUCT_INITIALIZER_BEGIN"))
+            {
+                if (Count >= 64)
+                {
+                    *Error = SCRIPT_ENGINE_ERROR_SYNTAX;
+                    break;
+                }
+                Values[Count++] = Pop(MatchedStack);
+            }
+            if (*Error != SCRIPT_ENGINE_ERROR_FREE || !MatchedStack->Pointer || !LastStructObject ||
+                !LastStructObjectType || LastStructObjectType->Kind != TY_STRUCT)
+            {
+                *Error = SCRIPT_ENGINE_ERROR_SYNTAX;
+                break;
+            }
+            Op0 = Pop(MatchedStack);
+            RemoveToken(&Op0);
+
+            Symbol = NewSymbol(); Symbol->Type = SYMBOL_SEMANTIC_RULE_TYPE; Symbol->Value = FUNC_AGGREGATE_ZERO; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+            Symbol = ToSymbol(LastStructObject, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+            Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = SCRIPT_ENGINE_ADDRESS_SPACE_LOCAL; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+            Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = LastStructObjectType->Size; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+
+            Member = LastStructObjectType->Members;
+            while (Count && Member)
+            {
+                PSCRIPT_ENGINE_TOKEN ValueToken = Values[--Count];
+                PSCRIPT_ENGINE_TOKEN AddressToken = LastStructObject;
+                BOOLEAN AddressIsTemp = FALSE;
+                if (Member->Type->Kind == TY_STRUCT || Member->Type->Kind == TY_ARRAY ||
+                    (Member->Type->Size != 1 && Member->Type->Size != 2 && Member->Type->Size != 4 && Member->Type->Size != 8))
+                {
+                    *Error = SCRIPT_ENGINE_ERROR_SYNTAX;
+                    RemoveToken(&ValueToken);
+                    break;
+                }
+                if (Member->Offset)
+                {
+                    Temp = NewTemp(Error);
+                    Temp->VariableType = CreatePointerType(Member->Type);
+                    Symbol = NewSymbol(); Symbol->Type = SYMBOL_SEMANTIC_RULE_TYPE; Symbol->Value = FUNC_ADD; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                    Symbol = ToSymbol(LastStructObject, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                    Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = Member->Offset; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                    Symbol = ToSymbol(Temp, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                    AddressToken = Temp;
+                    AddressIsTemp = TRUE;
+                }
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_SEMANTIC_RULE_TYPE; Symbol->Value = FUNC_TYPED_STORE; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = ToSymbol(ValueToken, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = ToSymbol(AddressToken, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = SCRIPT_ENGINE_ADDRESS_SPACE_LOCAL; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = Member->Type->Size; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                if (AddressIsTemp) FreeTemp(Temp);
+                RemoveToken(&ValueToken);
+                Member = Member->Next;
+            }
+            if (Count)
+                *Error = SCRIPT_ENGINE_ERROR_SYNTAX;
+        }
+        else if (!strcmp(Operator->Value, "@STRUCT_POINTER_CAST"))
+        {
+            PSYMBOL Symbol;
+            Op0 = Pop(MatchedStack);
+            while (MatchedStack->Pointer && Top(MatchedStack)->Type != LOCAL_UNRESOLVED_ID && Top(MatchedStack)->Type != LOCAL_ID)
+            {
+                Op1 = Pop(MatchedStack);
+                RemoveToken(&Op1);
+            }
+            if (!LastStructObject || !LastStructObjectType || LastStructObjectType->Kind != TY_PTR)
+            {
+                *Error = SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE;
+                break;
+            }
+            LastStructObjectType->PointerProvenance = POINTER_PROVENANCE_REMOTE;
+            Symbol = NewSymbol(); Symbol->Type = SYMBOL_SEMANTIC_RULE_TYPE; Symbol->Value = FUNC_MOV; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+            Symbol = ToSymbol(Op0, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+            Symbol = ToSymbol(LastStructObject, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+            RemoveToken(&Op0);
+        }
+        else if (!strcmp(Operator->Value, "@MEMBER_DOT_LVALUE") ||
+                 !strcmp(Operator->Value, "@MEMBER_ARROW_LVALUE") ||
+                 !strcmp(Operator->Value, "@MEMBER_DOT_READ") ||
+                 !strcmp(Operator->Value, "@MEMBER_ARROW_READ"))
+        {
+            BOOLEAN          IsArrow = strstr(Operator->Value, "ARROW") != NULL;
+            BOOLEAN          IsRead  = strstr(Operator->Value, "READ") != NULL;
+            PVARIABLE_TYPE   BaseType;
+            PSTRUCT_MEMBER   Member;
+            PSCRIPT_ENGINE_TOKEN AddressToken;
+            PSYMBOL          Symbol;
+
+            Op0 = Pop(MatchedStack); /* member name */
+            Op1 = Pop(MatchedStack); /* object, pointer, or prior member address */
+            BaseType = (PVARIABLE_TYPE)Op1->VariableType;
+            if (!BaseType && (Op1->Type == LOCAL_ID || Op1->Type == LOCAL_UNRESOLVED_ID))
+                BaseType = GetLocalIdentifierVariableType(Op1);
+            if (!BaseType && (Op1->Type == GLOBAL_ID || Op1->Type == GLOBAL_UNRESOLVED_ID))
+                BaseType = GetGlobalIdentifierVariableType(Op1);
+
+            if (IsArrow)
+            {
+                if (!BaseType || BaseType->Kind != TY_PTR || !BaseType->Base || BaseType->Base->Kind != TY_STRUCT)
+                {
+                    *Error = SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE;
+                    RemoveToken(&Op0); RemoveToken(&Op1);
+                    break;
+                }
+                AddressToken = Op1;
+                BaseType     = BaseType->Base;
+            }
+            else
+            {
+                if (!BaseType || BaseType->Kind != TY_STRUCT)
+                {
+                    *Error = SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE;
+                    RemoveToken(&Op0); RemoveToken(&Op1);
+                    break;
+                }
+                AddressToken = Op1;
+            }
+
+            if (!BaseType->IsComplete || !(Member = FindStructMember(BaseType, Op0->Value)))
+            {
+                *Error = BaseType->IsComplete ? SCRIPT_ENGINE_ERROR_UNRESOLVED_VARIABLE : SCRIPT_ENGINE_ERROR_INCOMPLETE_TYPE;
+                RemoveToken(&Op0); RemoveToken(&Op1);
+                break;
+            }
+
+            Temp = NewTemp(Error);
+            if (*Error != SCRIPT_ENGINE_ERROR_FREE)
+            {
+                RemoveToken(&Op0); RemoveToken(&Op1);
+                break;
+            }
+            Temp->VariableType = Member->Type;
+            Temp->IsAddress    = TRUE;
+            Temp->AddressSpace = IsArrow && ((PVARIABLE_TYPE)Op1->VariableType)->PointerProvenance != POINTER_PROVENANCE_LOCAL ?
+                                     SCRIPT_ENGINE_ADDRESS_SPACE_REMOTE :
+                                     (Op1->AddressSpace ? Op1->AddressSpace : SCRIPT_ENGINE_ADDRESS_SPACE_LOCAL);
+
+            Symbol = NewSymbol(); Symbol->Type = SYMBOL_SEMANTIC_RULE_TYPE; Symbol->Value = FUNC_ADD; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+            Symbol = ToSymbol(AddressToken, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+            Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = Member->Offset; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+            Symbol = ToSymbol(Temp, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+
+            RemoveToken(&Op0);
+            RemoveToken(&Op1);
+
+            if (IsRead && Member->Type->Kind != TY_STRUCT && Member->Type->Kind != TY_ARRAY)
+            {
+                PSCRIPT_ENGINE_TOKEN ValueTemp;
+                if (Member->Type->Size != 1 && Member->Type->Size != 2 && Member->Type->Size != 4 && Member->Type->Size != 8)
+                {
+                    *Error = SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE;
+                    FreeTemp(Temp);
+                    break;
+                }
+                ValueTemp = NewTemp(Error);
+                ValueTemp->VariableType = Member->Type;
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_SEMANTIC_RULE_TYPE; Symbol->Value = FUNC_TYPED_LOAD; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = ToSymbol(Temp, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = Temp->AddressSpace; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = Member->Type->Size; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = ToSymbol(ValueTemp, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                FreeTemp(Temp);
+                Push(MatchedStack, ValueTemp);
+            }
+            else
+            {
+                Push(MatchedStack, Temp);
+            }
+        }
+        else if (!strcmp(Operator->Value, "@TYPEDEF_DECLARATION"))
+        {
+            PVARIABLE_TYPE BaseType;
+            unsigned int Index;
+            Op0      = Pop(MatchedStack);
+            BaseType = PopStructBaseType(MatchedStack, Error);
+            if (!BaseType)
+            {
+                RemoveToken(&Op0);
+                break;
+            }
+            for (Index = 0; Index < StructPointerDepth; Index++)
+            {
+                BaseType = CreatePointerType(BaseType);
+            }
+            StructPointerDepth = 0;
+            if (!BaseType || !AddTypedefType(Op0->Value, BaseType))
+            {
+                *Error = SCRIPT_ENGINE_ERROR_DUPLICATE_TYPEDEF;
+            }
+            RemoveToken(&Op0);
+        }
+        else if (!strcmp(Operator->Value, "@INCLUDE"))
         {
             char *  IncludeFilePath;
             char    FullPath[MAX_PATH_LEN];
@@ -1545,8 +2010,43 @@ CodeGen(PSCRIPT_ENGINE_TOKEN_LIST MatchedStack, PSYMBOL_BUFFER CodeBuffer, PSCRI
                 }
             }
 
-            PushSymbol(CodeBuffer, Op0Symbol);
-            PushSymbol(CodeBuffer, Op1Symbol);
+            if (Op0->VariableType && Op1->VariableType &&
+                ((PVARIABLE_TYPE)Op0->VariableType)->Kind == TY_STRUCT &&
+                ((PVARIABLE_TYPE)Op1->VariableType)->Kind == TY_STRUCT)
+            {
+                PSYMBOL Symbol;
+                if (Op0->VariableType != Op1->VariableType || !((PVARIABLE_TYPE)Op0->VariableType)->IsComplete)
+                {
+                    *Error = SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE;
+                    break;
+                }
+                (CodeBuffer->Head + CodeBuffer->Pointer - 1)->Value = FUNC_AGGREGATE_COPY;
+                PushSymbol(CodeBuffer, Op1Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = Op1->AddressSpace ? Op1->AddressSpace : SCRIPT_ENGINE_ADDRESS_SPACE_LOCAL; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                PushSymbol(CodeBuffer, Op0Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = Op0->AddressSpace ? Op0->AddressSpace : SCRIPT_ENGINE_ADDRESS_SPACE_LOCAL; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = ((PVARIABLE_TYPE)Op0->VariableType)->Size; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+            }
+            else if (Op1->IsAddress)
+            {
+                PSYMBOL Symbol;
+                PVARIABLE_TYPE DestinationType = (PVARIABLE_TYPE)Op1->VariableType;
+                if (!DestinationType || (DestinationType->Size != 1 && DestinationType->Size != 2 && DestinationType->Size != 4 && DestinationType->Size != 8))
+                {
+                    *Error = SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE;
+                    break;
+                }
+                (CodeBuffer->Head + CodeBuffer->Pointer - 1)->Value = FUNC_TYPED_STORE;
+                PushSymbol(CodeBuffer, Op0Symbol);
+                PushSymbol(CodeBuffer, Op1Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = Op1->AddressSpace; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = DestinationType->Size; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+            }
+            else
+            {
+                PushSymbol(CodeBuffer, Op0Symbol);
+                PushSymbol(CodeBuffer, Op1Symbol);
+            }
 
             //
             // Free the operand if it is a temp value
@@ -3826,7 +4326,8 @@ ToSymbol(PSCRIPT_ENGINE_TOKEN Token, PSCRIPT_ENGINE_ERROR_TYPE Error)
     {
         Symbol->Value = GetLocalIdentifierVal(Token);
 
-        if (((VARIABLE_TYPE *)Token->VariableType)->Kind == TY_ARRAY)
+        if (((VARIABLE_TYPE *)Token->VariableType)->Kind == TY_ARRAY ||
+            ((VARIABLE_TYPE *)Token->VariableType)->Kind == TY_STRUCT)
         {
             SetType(&Symbol->Type, SYMBOL_REFERENCE_LOCAL_ID_TYPE);
         }
@@ -3877,7 +4378,12 @@ ToSymbol(PSCRIPT_ENGINE_TOKEN Token, PSCRIPT_ENGINE_ERROR_TYPE Error)
 
         Symbol->Value = DecimalToInt(Token->Value);
 
-        if (((VARIABLE_TYPE *)Token->VariableType)->Kind == TY_ARRAY)
+        if (Token->IsAddress)
+        {
+            SetType(&Symbol->Type, SYMBOL_TEMP_TYPE);
+        }
+        else if (((VARIABLE_TYPE *)Token->VariableType)->Kind == TY_ARRAY ||
+            ((VARIABLE_TYPE *)Token->VariableType)->Kind == TY_STRUCT)
         {
             SetType(&Symbol->Type, SYMBOL_REFERENCE_TEMP_TYPE);
         }
@@ -4346,6 +4852,24 @@ HandleError(PSCRIPT_ENGINE_ERROR_TYPE Error, char * str)
     case SCRIPT_ENGINE_ERROR_NON_VOID_FUNCTION_NOT_RETURNING_VALUE:
         strcat(Message, "Not returning a value in noo-void function");
         return Message;
+    case SCRIPT_ENGINE_ERROR_UNKNOWN_STRUCT_TAG:
+        strcat(Message, "Unknown struct tag");
+        return Message;
+    case SCRIPT_ENGINE_ERROR_INCOMPLETE_TYPE:
+        strcat(Message, "Incomplete struct type cannot be used by value");
+        return Message;
+    case SCRIPT_ENGINE_ERROR_DUPLICATE_STRUCT_DEFINITION:
+        strcat(Message, "Duplicate struct definition");
+        return Message;
+    case SCRIPT_ENGINE_ERROR_DUPLICATE_STRUCT_MEMBER:
+        strcat(Message, "Duplicate struct member");
+        return Message;
+    case SCRIPT_ENGINE_ERROR_DUPLICATE_TYPEDEF:
+        strcat(Message, "Duplicate typedef name");
+        return Message;
+    case SCRIPT_ENGINE_ERROR_INVALID_ARRAY_SIZE:
+        strcat(Message, "Invalid or overflowing array size");
+        return Message;
     default:
         strcat(Message, "Unknown Error: ");
         return Message;
@@ -4691,6 +5215,34 @@ FuncGetNumberOfOperands(UINT64 FuncType, UINT32 * NumberOfGetOperands, UINT32 * 
 
     switch (FuncType)
     {
+
+    //
+	// This code is not tested yet, so they are commented out for now
+    // 
+    //case FUNC_TYPED_LOAD:
+    //    *NumberOfGetOperands = 3;
+    //    *NumberOfSetOperands = 1;
+    //    Result               = TRUE;
+    //    break;
+
+    //case FUNC_TYPED_STORE:
+    //    *NumberOfGetOperands = 4;
+    //    *NumberOfSetOperands = 0;
+    //    Result               = TRUE;
+    //    break;
+
+    //case FUNC_AGGREGATE_COPY:
+    //    *NumberOfGetOperands = 5;
+    //    *NumberOfSetOperands = 0;
+    //    Result               = TRUE;
+    //    break;
+
+    //case FUNC_AGGREGATE_ZERO:
+    //    *NumberOfGetOperands = 3;
+    //    *NumberOfSetOperands = 0;
+    //    Result               = TRUE;
+    //    break;
+
     case FUNC_INC:
 
         *NumberOfGetOperands = 1;

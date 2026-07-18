@@ -75,6 +75,8 @@ typedef struct _SCRIPT_ENGINE_TOKEN
     unsigned int             MaxLen;
     VARIABLE_TYPE *          VariableType;
     unsigned long long       VariableMemoryIdx;
+    unsigned int             AddressSpace;
+    BOOLEAN                  IsAddress;
 } SCRIPT_ENGINE_TOKEN, *PSCRIPT_ENGINE_TOKEN;
 
 /**

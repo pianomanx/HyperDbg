@@ -13,6 +13,52 @@
 #include "pch.h"
 #include "../script-eval/header/ScriptEngineInternalHeader.h"
 
+static BOOLEAN
+ScriptEngineTypedLocalRangeIsValid(PSCRIPT_ENGINE_GENERAL_REGISTERS Registers, UINT64 Address, UINT32 Size)
+{
+    UINT64 Begin = (UINT64)Registers->StackBuffer;
+    UINT64 End   = Begin + (MAX_STACK_BUFFER_COUNT * sizeof(UINT64));
+    return Size && Address >= Begin && Address <= End && Size <= End - Address;
+}
+
+static BOOLEAN
+ScriptEngineTypedTransfer(PSCRIPT_ENGINE_GENERAL_REGISTERS Registers,
+                          UINT64 Address,
+                          UINT64 AddressSpace,
+                          PVOID Buffer,
+                          UINT32 Size,
+                          BOOLEAN Write)
+{
+    if (AddressSpace == SCRIPT_ENGINE_ADDRESS_SPACE_LOCAL)
+    {
+        if (!ScriptEngineTypedLocalRangeIsValid(Registers, Address, Size))
+            return FALSE;
+        if (Write)
+            memcpy((PVOID)Address, Buffer, Size);
+        else
+            memcpy(Buffer, (PVOID)Address, Size);
+        return TRUE;
+    }
+
+    if (AddressSpace != SCRIPT_ENGINE_ADDRESS_SPACE_REMOTE ||
+        !CheckAccessValidityAndSafety(Address, Size))
+        return FALSE;
+
+#ifdef SCRIPT_ENGINE_USER_MODE
+    if (Write)
+        memcpy((PVOID)Address, Buffer, Size);
+    else
+        memcpy(Buffer, (PVOID)Address, Size);
+#endif
+#ifdef SCRIPT_ENGINE_KERNEL_MODE
+    if (Write)
+        MemoryMapperWriteMemorySafeOnTargetProcess(Address, Buffer, Size);
+    else
+        MemoryMapperReadMemorySafeOnTargetProcess(Address, Buffer, Size);
+#endif
+    return TRUE;
+}
+
 /**
  * @brief Get the Pseudo reg value
  *
@@ -305,6 +351,8 @@ ScriptEngineExecute(PGUEST_REGS                      GuestRegs,
     PSYMBOL Src0;
     PSYMBOL Src1;
     PSYMBOL Src2;
+    PSYMBOL Src3;
+    PSYMBOL Src4;
 
     PSYMBOL Des;
     UINT64  SrcVal0;
@@ -331,6 +379,90 @@ ScriptEngineExecute(PGUEST_REGS                      GuestRegs,
 
     switch (Operator->Value)
     {
+    case FUNC_TYPED_LOAD:
+    {
+        Src0 = CodeBuffer->Head + (*Indx)++;
+        Src1 = CodeBuffer->Head + (*Indx)++;
+        Src2 = CodeBuffer->Head + (*Indx)++;
+        Des  = CodeBuffer->Head + (*Indx)++;
+        SrcVal0 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src0, FALSE);
+        SrcVal1 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src1, FALSE);
+        SrcVal2 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src2, FALSE);
+        DesVal = 0;
+        if ((SrcVal2 != 1 && SrcVal2 != 2 && SrcVal2 != 4 && SrcVal2 != 8) ||
+            !ScriptEngineTypedTransfer(ScriptGeneralRegisters, SrcVal0, SrcVal1, &DesVal, (UINT32)SrcVal2, FALSE))
+            HasError = TRUE;
+        else
+            SetValue(GuestRegs, ScriptGeneralRegisters, Des, DesVal);
+        break;
+    }
+
+    case FUNC_TYPED_STORE:
+    {
+        Src0 = CodeBuffer->Head + (*Indx)++;
+        Src1 = CodeBuffer->Head + (*Indx)++;
+        Src2 = CodeBuffer->Head + (*Indx)++;
+        Src3 = CodeBuffer->Head + (*Indx)++;
+        SrcVal0 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src0, FALSE);
+        SrcVal1 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src1, FALSE);
+        SrcVal2 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src2, FALSE);
+        DesVal  = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src3, FALSE);
+        if ((DesVal != 1 && DesVal != 2 && DesVal != 4 && DesVal != 8) ||
+            !ScriptEngineTypedTransfer(ScriptGeneralRegisters, SrcVal1, SrcVal2, &SrcVal0, (UINT32)DesVal, TRUE))
+            HasError = TRUE;
+        break;
+    }
+
+    case FUNC_AGGREGATE_ZERO:
+    {
+        BYTE ZeroBuffer[64] = {0};
+        UINT64 Done = 0;
+        Src0 = CodeBuffer->Head + (*Indx)++;
+        Src1 = CodeBuffer->Head + (*Indx)++;
+        Src2 = CodeBuffer->Head + (*Indx)++;
+        SrcVal0 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src0, FALSE);
+        SrcVal1 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src1, FALSE);
+        SrcVal2 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src2, FALSE);
+        while (Done < SrcVal2 && !HasError)
+        {
+            UINT32 Chunk = (UINT32)((SrcVal2 - Done) > sizeof(ZeroBuffer) ? sizeof(ZeroBuffer) : (SrcVal2 - Done));
+            if (!ScriptEngineTypedTransfer(ScriptGeneralRegisters, SrcVal0 + Done, SrcVal1, ZeroBuffer, Chunk, TRUE))
+                HasError = TRUE;
+            Done += Chunk;
+        }
+        break;
+    }
+
+    case FUNC_AGGREGATE_COPY:
+    {
+        BYTE MovingBuffer[64];
+        UINT64 Done = 0;
+        BOOLEAN Backward;
+        Src0 = CodeBuffer->Head + (*Indx)++;
+        Src1 = CodeBuffer->Head + (*Indx)++;
+        Src2 = CodeBuffer->Head + (*Indx)++;
+        Src3 = CodeBuffer->Head + (*Indx)++;
+        Src4 = CodeBuffer->Head + (*Indx)++;
+        SrcVal0 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src0, FALSE);
+        SrcVal1 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src1, FALSE);
+        SrcVal2 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src2, FALSE);
+        DesVal  = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src3, FALSE);
+        {
+            UINT64 Size = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src4, FALSE);
+            Backward = SrcVal1 == DesVal && SrcVal0 > SrcVal2 && SrcVal0 < SrcVal2 + Size;
+            while (Done < Size && !HasError)
+            {
+                UINT32 Chunk = (UINT32)((Size - Done) > sizeof(MovingBuffer) ? sizeof(MovingBuffer) : (Size - Done));
+                UINT64 Offset = Backward ? Size - Done - Chunk : Done;
+                if (!ScriptEngineTypedTransfer(ScriptGeneralRegisters, SrcVal2 + Offset, DesVal, MovingBuffer, Chunk, FALSE) ||
+                    !ScriptEngineTypedTransfer(ScriptGeneralRegisters, SrcVal0 + Offset, SrcVal1, MovingBuffer, Chunk, TRUE))
+                    HasError = TRUE;
+                Done += Chunk;
+            }
+        }
+        break;
+    }
+
     case FUNC_ED:
 
         Src0 = (PSYMBOL)((unsigned long long)CodeBuffer->Head +
