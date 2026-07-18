@@ -76,8 +76,9 @@ Shared, OS-neutral headers:
 |------|----------|---------------|-------------------|
 | `.../script-engine/symbol-linux.cpp` | `symbol.cpp` (DbgHelp + PDB) | All `Symbol*` functions. Only `SymbolConvertNameOrExprToAddress` does real work: parses a plain hex/decimal literal so numeric addresses work. | Real ELF/DWARF symbol parser (libdw / libelf / libbfd). |
 | `.../user-level/pe-parser-linux.cpp` | `pe-parser.cpp` (Windows PE format) | The 3 public fns: `PeShowSectionInformationAndDump`, `PeIsPE32BitOr64Bit` (→ FALSE), `PeGetSyscallNumber` (→ 0). | Recreate the Windows `IMAGE_*` headers for Linux, then port `pe-parser.cpp`. Only needed for Windows-target debugging on Linux. |
+| `.../driver-loader/install-linux.cpp` | `install.cpp` (SCM driver loader) | The 2 Linux-visible public fns: `ManageDriver` (→ FALSE) and `SetupPathForFileName` (→ FALSE). The 4 `SC_HANDLE` helpers (`InstallDriver`/`RemoveDriver`/`StartDriver`/`StopDriver`) are guarded out of `install.h` on Linux (never referenced there). | `ManageDriver`: load/unload a future HyperDbg Linux kernel module via `finit_module`/`delete_module` (needs CAP_SYS_MODULE). `SetupPathForFileName`: `readlink("/proc/self/exe")` + strip + append + `access()` (generic "find a file beside my binary"; also used by hwdbg). |
 
-Both self-guard with `#ifdef __linux__` and print
+All three self-guard with `#ifdef __linux__` and print
 `"... is not supported on Linux yet"` at runtime.
 
 ---
@@ -90,14 +91,21 @@ equivalent, behavior-preserving.
 
 ### Build / precompiled header
 - `libhyperdbg/pch.h` — the big one: `#ifdef _WIN32` guards around Windows-only
-  headers (`dbghelp.h`, `install.h`, SCM, etc.); unconditional includes of the new
-  platform headers + `nt-list.h`; include-order fixes.
+  headers (`dbghelp.h`, SCM, etc.); unconditional includes of the new
+  platform headers + `nt-list.h`; include-order fixes. `install.h` is now included
+  unconditionally (it was Windows-only) since its Linux-unsafe `SC_HANDLE` decls are
+  self-guarded — see below.
+- `header/debugger/driver-loader/install.h` — the 4 `SC_HANDLE` driver helpers
+  (`InstallDriver`/`RemoveDriver`/`StartDriver`/`StopDriver`) guarded `#ifdef _WIN32`
+  (they use the Windows-only `SC_HANDLE` type and have no callers outside install.cpp);
+  `ManageDriver`, `SetupPathForFileName` and the `DRIVER_FUNC_*` macros stay visible on
+  both so the Linux callers (`libhyperdbg.cpp`, hwdbg, export.cpp) compile.
 - `CMakeLists.txt` (top-level) — `if(LINUX)` branch builds only `script-engine`,
   `libhyperdbg`, `hyperdbg-cli`; links `Threads::Threads`. (CMake is **Linux-only**;
   Windows builds from the `.vcxproj` / MSBuild.)
-- `libhyperdbg/CMakeLists.txt` — `if(UNIX)` swaps `symbol.cpp`→`symbol-linux.cpp`
-  and `pe-parser.cpp`→`pe-parser-linux.cpp`; header entries point at the real
-  nested paths.
+- `libhyperdbg/CMakeLists.txt` — `if(UNIX)` swaps `symbol.cpp`→`symbol-linux.cpp`,
+  `pe-parser.cpp`→`pe-parser-linux.cpp`, and `install.cpp`→`install-linux.cpp`; header
+  entries point at the real nested paths.
 
 ### script-engine subproject
 - GCC-compatibility fixes across `script-engine/` (`pch.h`, `type.h`, `scanner.h`,

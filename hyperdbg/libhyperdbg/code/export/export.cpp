@@ -417,12 +417,12 @@ hyperdbg_u_set_custom_driver_path(CHAR * driver_file_path, CHAR * driver_name)
     //
     // Copy the driver path
     //
-    strcpy_s(g_DriverLocation, MAX_PATH, driver_file_path);
+    PlatformStrCpy(g_DriverLocation, MAX_PATH, driver_file_path);
 
     //
     // Copy the driver name
     //
-    strcpy_s(g_DriverName, MAX_PATH, driver_name);
+    PlatformStrCpy(g_DriverName, MAX_PATH, driver_name);
 
     //
     // Set the flag to use the custom driver path

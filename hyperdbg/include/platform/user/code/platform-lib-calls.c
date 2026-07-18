@@ -164,6 +164,54 @@ PlatformStrnlen(const char * Str, SIZE_T MaxLength)
 }
 
 /**
+ * @brief Platform independent wrapper for strcpy_s
+ *
+ * @details Copies Src into the DestSize-byte Dest buffer, including the null
+ * terminator. On Linux there is no standard strcpy_s, so this performs the same
+ * bounds check: if Src (plus terminator) does not fit, Dest is set to an empty
+ * string and a non-zero error is returned, matching strcpy_s's behavior.
+ *
+ * @param Dest destination buffer
+ * @param DestSize size of the destination buffer in bytes
+ * @param Src source string
+ * @return INT 0 on success, non-zero on failure
+ */
+INT
+PlatformStrCpy(char * Dest, SIZE_T DestSize, const char * Src)
+{
+#if defined(_WIN32)
+    return strcpy_s(Dest, DestSize, Src);
+#elif defined(__linux__)
+    SIZE_T Length;
+
+    if (Dest == NULL || DestSize == 0 || Src == NULL)
+    {
+        if (Dest != NULL && DestSize != 0)
+        {
+            Dest[0] = '\0';
+        }
+        return -1;
+    }
+
+    Length = strlen(Src);
+
+    if (Length >= DestSize)
+    {
+        //
+        // Source does not fit (need room for the null terminator too)
+        //
+        Dest[0] = '\0';
+        return -1;
+    }
+
+    memcpy(Dest, Src, Length + 1);
+    return 0;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
  * @brief Platform independent wrapper for Sleep / usleep
  *
  * @param Milliseconds number of milliseconds to suspend the calling thread

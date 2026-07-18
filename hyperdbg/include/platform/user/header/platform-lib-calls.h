@@ -49,6 +49,16 @@ SIZE_T
 PlatformStrnlen(const char * Str, SIZE_T MaxLength);
 
 //
+// BOUNDED STRING COPY
+//
+// Mirrors strcpy_s: copies Src into Dest (of DestSize bytes, including the null
+// terminator). Returns 0 on success, non-zero if the arguments are invalid or
+// Src does not fit (in which case Dest is left as an empty string).
+//
+INT
+PlatformStrCpy(char * Dest, SIZE_T DestSize, const char * Src);
+
+//
 // SLEEP (milliseconds)
 //
 VOID

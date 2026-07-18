@@ -209,9 +209,7 @@ typedef const wchar_t *LPCWCHAR, *PCWCHAR;
 #include "header/debugger/core/debugger.h"
 #include "header/debugger/script-engine/script-engine.h"
 #include "header/debugger/commands/help.h"
-#ifdef _WIN32
-#    include "header/debugger/driver-loader/install.h"
-#endif
+#include "header/debugger/driver-loader/install.h"
 #include "header/common/list.h"
 #include "header/debugger/tests/tests.h"
 #include "header/app/messaging.h"
