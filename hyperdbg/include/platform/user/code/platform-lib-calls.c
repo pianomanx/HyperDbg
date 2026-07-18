@@ -692,3 +692,147 @@ PlatformUnmapFile(VOID * BaseAddress, SIZE_T FileSize, HANDLE FileHandle)
 #    error "Unsupported platform"
 #endif
 }
+
+/**
+ * @brief Platform independent wrapper for CreateProcessW
+ *
+ * @details Creates a process with the given creation flags. STARTUPINFO is kept
+ * internal so it never leaks to callers. The command line is passed writable to
+ * match CreateProcessW's contract.
+ *
+ * @param FileName application name
+ * @param CommandLine command line
+ * @param CreationFlags process creation flags
+ * @param ProcessInformation out-param receiving process/thread handles and ids
+ * @return BOOLEAN TRUE on success, FALSE on failure
+ */
+BOOLEAN
+PlatformCreateProcess(const WCHAR * FileName, const WCHAR * CommandLine, DWORD CreationFlags, PPROCESS_INFORMATION ProcessInformation)
+{
+#if defined(_WIN32)
+    STARTUPINFOW StartupInfo;
+
+    memset(&StartupInfo, 0, sizeof(StartupInfo));
+    StartupInfo.cb = sizeof(STARTUPINFOA);
+
+    return (BOOLEAN)CreateProcessW(FileName,
+                                   (WCHAR *)CommandLine,
+                                   NULL,
+                                   NULL,
+                                   FALSE,
+                                   CreationFlags,
+                                   NULL,
+                                   NULL,
+                                   &StartupInfo,
+                                   ProcessInformation);
+#elif defined(__linux__)
+    //
+    // TODO (linux): back with fork()+execve() (and CREATE_SUSPENDED via a
+    //               ptrace/stop) when the Linux user-debugger backend lands.
+    //
+    (void)FileName;
+    (void)CommandLine;
+    (void)CreationFlags;
+    (void)ProcessInformation;
+    return FALSE;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for OpenProcess
+ *
+ * @param DesiredAccess desired access rights
+ * @param InheritHandle whether the handle is inheritable
+ * @param ProcessId target process id
+ * @return HANDLE process handle, or NULL on failure
+ */
+HANDLE
+PlatformOpenProcess(DWORD DesiredAccess, BOOL InheritHandle, DWORD ProcessId)
+{
+#if defined(_WIN32)
+    return OpenProcess(DesiredAccess, InheritHandle, ProcessId);
+#elif defined(__linux__)
+    //
+    // TODO (linux): resolve a /proc/<pid> handle or ptrace-attach when the
+    //               Linux user-debugger backend lands.
+    //
+    (void)DesiredAccess;
+    (void)InheritHandle;
+    (void)ProcessId;
+    return NULL;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for TerminateProcess
+ *
+ * @param Process process handle
+ * @param ExitCode exit code to set
+ * @return BOOL non-zero on success, zero on failure
+ */
+BOOL
+PlatformTerminateProcess(HANDLE Process, UINT ExitCode)
+{
+#if defined(_WIN32)
+    return TerminateProcess(Process, ExitCode);
+#elif defined(__linux__)
+    //
+    // TODO (linux): kill(pid, SIGKILL) once process handles are real.
+    //
+    (void)Process;
+    (void)ExitCode;
+    return FALSE;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for ResumeThread
+ *
+ * @param Thread thread handle
+ * @return DWORD previous suspend count, or (DWORD)-1 on failure
+ */
+DWORD
+PlatformResumeThread(HANDLE Thread)
+{
+#if defined(_WIN32)
+    return ResumeThread(Thread);
+#elif defined(__linux__)
+    //
+    // TODO (linux): PTRACE_CONT / SIGCONT once thread handles are real.
+    //
+    (void)Thread;
+    return (DWORD)-1;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for GetExitCodeProcess
+ *
+ * @param Process process handle
+ * @param ExitCode out-param receiving the exit code
+ * @return BOOL non-zero on success, zero on failure
+ */
+BOOL
+PlatformGetExitCodeProcess(HANDLE Process, LPDWORD ExitCode)
+{
+#if defined(_WIN32)
+    return GetExitCodeProcess(Process, ExitCode);
+#elif defined(__linux__)
+    //
+    // TODO (linux): waitpid(WNOHANG)/read /proc state once handles are real.
+    //
+    (void)Process;
+    (void)ExitCode;
+    return FALSE;
+#else
+#    error "Unsupported platform"
+#endif
+}

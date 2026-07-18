@@ -165,3 +165,26 @@ PlatformGetCurrentProcessId(VOID);
 
 CHAR *
     PlatformGetCurrentProcessName(VOID);
+
+//
+// PROCESS / THREAD LIFECYCLE (spawn / open / terminate / query)
+//
+// Thin wrappers over the Win32 process-management calls used by the
+// user-debugger. Each is real on Windows and stubbed on Linux (there is no
+// Linux process/ptrace backend yet). STARTUPINFO stays inside
+// PlatformCreateProcess so it never leaks to callers.
+//
+BOOLEAN
+PlatformCreateProcess(const WCHAR * FileName, const WCHAR * CommandLine, DWORD CreationFlags, PPROCESS_INFORMATION ProcessInformation);
+
+HANDLE
+PlatformOpenProcess(DWORD DesiredAccess, BOOL InheritHandle, DWORD ProcessId);
+
+BOOL
+PlatformTerminateProcess(HANDLE Process, UINT ExitCode);
+
+DWORD
+PlatformResumeThread(HANDLE Thread);
+
+BOOL
+PlatformGetExitCodeProcess(HANDLE Process, LPDWORD ExitCode);

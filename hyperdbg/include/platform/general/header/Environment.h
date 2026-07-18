@@ -91,4 +91,13 @@ typedef void * HMODULE;
 #    define CTRL_LOGOFF_EVENT   5
 #    define CTRL_SHUTDOWN_EVENT 6
 
+// Win32 process access rights / creation flags / exit-code sentinel, kept at
+// their Windows values so the user-debugger process call sites compile
+// unchanged. The underlying process wrappers are stubbed on Linux for now.
+#    define PROCESS_TERMINATE                 0x0001
+#    define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
+#    define CREATE_SUSPENDED                  0x00000004
+#    define CREATE_NEW_CONSOLE                0x00000010
+#    define STILL_ACTIVE                      0x00000103
+
 #endif // HYPERDBG_ENV_LINUX

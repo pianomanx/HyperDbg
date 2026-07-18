@@ -122,6 +122,17 @@ equivalent, behavior-preserving.
   script-engine message-callback cast.
 - `break-control.cpp` — console-control handler routed through `platform-signal`.
 
+### User-level debugger
+- `ud.cpp` — wrapper sweep (bucket 1): `DeviceIoControl`→`PlatformDeviceIoControl`,
+  the `"ioctl failed"` `GetLastError`→`PlatformGetLastError`, `RtlZeroMemory`→`PlatformZeroMemory`,
+  the event-handle `CloseHandle`→`PlatformCloseHandle`, `CreateEvent(NULL,x,y,NULL)`→`PlatformCreateEvent(x,y)`.
+  Win32 process/thread-management (bucket 2): 5 new `Platform*` process wrappers (Group A)
+  + whole-body `#ifdef _WIN32` guards on the Toolhelp walkers / `UdPrintError` (Group B).
+  See the Process-control section of the TODO ledger for details.
+- `platform-lib-calls.{h,c}` — added `PlatformCreateProcess`/`PlatformOpenProcess`/
+  `PlatformTerminateProcess`/`PlatformResumeThread`/`PlatformGetExitCodeProcess`
+  (Windows real, Linux stub).
+
 ### Script engine
 - `script-engine-wrapper.cpp` — 6× `RtlZeroMemory`→`PlatformZeroMemory`; the two
   wide-char test harnesses (`AllocateStructForCasting`, `ScriptEngineWrapperTestParser`)
@@ -166,11 +177,29 @@ Grouped by subsystem. These are the shortcuts taken to reach compilation.
 - [ ] `platform-ioctl.c` Linux branch — needs a Linux kernel module + real ioctl
   (currently stub). This is the local driver interface used across many files.
 
-### Process control (current blocker — `ud.cpp`)
-- [ ] Win32 process spawn/manage: `CreateProcessW`, `OpenProcess`,
-  `TerminateProcess`, `ResumeThread`, `GetExitCodeProcess`/`STILL_ACTIVE`,
-  `STARTUPINFO*`, `PROCESS_INFORMATION`, plus a `FormatMessage`/`MAKELANGID`
-  error-string helper. Decide: new `PlatformCreateProcess`-style wrappers vs. guard.
+### Process control — `ud.cpp` DONE (2026-07-18)
+Mechanical wrapper sweep (bucket 1): `DeviceIoControl`×10→`PlatformDeviceIoControl`,
+`GetLastError`×10 (the `"ioctl failed"` sites)→`PlatformGetLastError`,
+`RtlZeroMemory`×3→`PlatformZeroMemory`, `CloseHandle`×1 (event-handle close)→`PlatformCloseHandle`,
+`CreateEvent(NULL,FALSE,FALSE,NULL)`→`PlatformCreateEvent(FALSE,FALSE)`.
+
+Bucket 2 (Win32 process/thread mgmt) resolved two ways (user decision):
+- **Group A — new guarded `Platform*` wrappers** (real on Windows, Linux stub) for the
+  self-contained calls: `PlatformCreateProcess` (keeps `STARTUPINFO` internal),
+  `PlatformOpenProcess`, `PlatformTerminateProcess`, `PlatformResumeThread`,
+  `PlatformGetExitCodeProcess` — all in `platform-lib-calls.{h,c}`. ud.cpp call sites
+  swapped 1:1; `UdCreateSuspendedProcess` now calls `PlatformCreateProcess` with the
+  `CREATE_SUSPENDED|CREATE_NEW_CONSOLE` flags kept at the call site.
+- **Group B — whole-body `#ifdef _WIN32` guards** (Windows verbatim, Linux stub) for the
+  calls interleaved with UI/walk logic: `UdListProcessThreads`, `UdCheckThreadByProcessId`
+  (Toolhelp snapshot walk), `UdPrintError` (`FormatMessage`/`MAKELANGID`). No Linux
+  Toolhelp/`THREADENTRY32` types needed.
+- **Pure additions:** Linux `PROCESS_INFORMATION` struct in `SDK/headers/BasicTypes.h`;
+  `PROCESS_TERMINATE`/`PROCESS_QUERY_LIMITED_INFORMATION`/`CREATE_SUSPENDED`/
+  `CREATE_NEW_CONSOLE`/`STILL_ACTIVE` `#define`s in `Environment.h` (Linux block).
+
+TODO(Linux) still open in the wrapper bodies: real `fork`+`execve`/`ptrace` process
+backend, and the Toolhelp thread-enumeration equivalent (`/proc`) — all stubbed for now.
 
 ### Misc runtime stubs
 - [ ] `PlatformGetOsVersion` — Linux returns FALSE; implement via `uname`.
