@@ -182,6 +182,7 @@ PlatformStrCpy(char * Dest, SIZE_T DestSize, const char * Src)
 #if defined(_WIN32)
     return strcpy_s(Dest, DestSize, Src);
 #elif defined(__linux__)
+    // NOT YET TESTED!! So needs some testing to see if it actually behaves the same as strcpy_S on windows
     SIZE_T Length;
 
     if (Dest == NULL || DestSize == 0 || Src == NULL)
