@@ -37,6 +37,12 @@ VOID
 PlatformZeroMemory(PVOID Buffer, SIZE_T Size);
 
 //
+// COPY MEMORY
+//
+VOID
+PlatformCopyMemory(PVOID Destination, const VOID * Source, SIZE_T Size);
+
+//
 // SPRINTF
 //
 INT
@@ -47,6 +53,16 @@ PlatformSprintf(char * Buffer, SIZE_T BufferSize, const char * Format, ...);
 //
 SIZE_T
 PlatformStrnlen(const char * Str, SIZE_T MaxLength);
+
+//
+// BOUNDED STRING COPY
+//
+// Mirrors strcpy_s: copies Src into Dest (of DestSize bytes, including the null
+// terminator). Returns 0 on success, non-zero if the arguments are invalid or
+// Src does not fit (in which case Dest is left as an empty string).
+//
+INT
+PlatformStrCpy(char * Dest, SIZE_T DestSize, const char * Src);
 
 //
 // SLEEP (milliseconds)
@@ -165,3 +181,26 @@ PlatformGetCurrentProcessId(VOID);
 
 CHAR *
     PlatformGetCurrentProcessName(VOID);
+
+//
+// PROCESS / THREAD LIFECYCLE (spawn / open / terminate / query)
+//
+// Thin wrappers over the Win32 process-management calls used by the
+// user-debugger. Each is real on Windows and stubbed on Linux (there is no
+// Linux process/ptrace backend yet). STARTUPINFO stays inside
+// PlatformCreateProcess so it never leaks to callers.
+//
+BOOLEAN
+PlatformCreateProcess(const WCHAR * FileName, const WCHAR * CommandLine, DWORD CreationFlags, PPROCESS_INFORMATION ProcessInformation);
+
+HANDLE
+PlatformOpenProcess(DWORD DesiredAccess, BOOL InheritHandle, DWORD ProcessId);
+
+BOOL
+PlatformTerminateProcess(HANDLE Process, UINT ExitCode);
+
+DWORD
+PlatformResumeThread(HANDLE Thread);
+
+BOOL
+PlatformGetExitCodeProcess(HANDLE Process, LPDWORD ExitCode);

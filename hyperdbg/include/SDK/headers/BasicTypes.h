@@ -115,6 +115,16 @@ typedef UCHAR *  PUCHAR;
 typedef DWORD *  PDWORD;
 typedef WORD *   PWORD;
 
+// Process creation/management out-param (mirrors the Win32 PROCESS_INFORMATION
+// layout so the user-debugger process wrappers keep the same call shape)
+typedef struct _PROCESS_INFORMATION
+{
+    HANDLE hProcess;
+    HANDLE hThread;
+    DWORD  dwProcessId;
+    DWORD  dwThreadId;
+} PROCESS_INFORMATION, *PPROCESS_INFORMATION, *LPPROCESS_INFORMATION;
+
 #endif
 
 #define NULL_ZERO   0

@@ -32,6 +32,7 @@ set(SourceFiles
     "../include/platform/user/code/platform-serial.c"
     "../include/platform/user/code/platform-ioctl.c"
     "../include/platform/user/code/platform-signal.c"
+    "../include/platform/user/code/windows-only/windows-privilege.c"
     "../script-eval/code/Functions.c"
     "../script-eval/code/Keywords.c"
     "../script-eval/code/PseudoRegisters.c"
@@ -176,6 +177,7 @@ set_source_files_properties(
     "../include/platform/user/code/platform-serial.c"
     "../include/platform/user/code/platform-ioctl.c"
     "../include/platform/user/code/platform-signal.c"
+    "../include/platform/user/code/windows-only/windows-privilege.c"
     "../script-eval/code/Functions.c"
     "../script-eval/code/Keywords.c"
     "../script-eval/code/PseudoRegisters.c"
@@ -189,6 +191,8 @@ if(UNIX)
     list(APPEND SourceFiles "code/debugger/script-engine/symbol-linux.cpp")
     list(REMOVE_ITEM SourceFiles "code/debugger/user-level/pe-parser.cpp")
     list(APPEND SourceFiles "code/debugger/user-level/pe-parser-linux.cpp")
+    list(REMOVE_ITEM SourceFiles "code/debugger/driver-loader/install.cpp")
+    list(APPEND SourceFiles "code/debugger/driver-loader/install-linux.cpp")
 endif()
 
 add_library(libhyperdbg SHARED ${SourceFiles})
