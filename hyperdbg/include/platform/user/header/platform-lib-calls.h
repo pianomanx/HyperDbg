@@ -37,6 +37,12 @@ VOID
 PlatformZeroMemory(PVOID Buffer, SIZE_T Size);
 
 //
+// COPY MEMORY
+//
+VOID
+PlatformCopyMemory(PVOID Destination, const VOID * Source, SIZE_T Size);
+
+//
 // SPRINTF
 //
 INT

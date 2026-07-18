@@ -80,6 +80,25 @@ PlatformZeroMemory(PVOID Buffer, SIZE_T Size)
 }
 
 /**
+ * @brief Platform independent wrapper for RtlCopyMemory / memcpy
+ *
+ * @param Destination pointer to the destination buffer
+ * @param Source pointer to the source buffer
+ * @param Size number of bytes to copy
+ */
+VOID
+PlatformCopyMemory(PVOID Destination, const VOID * Source, SIZE_T Size)
+{
+#if defined(_WIN32)
+    RtlCopyMemory(Destination, Source, Size);
+#elif defined(__linux__)
+    memcpy(Destination, Source, Size);
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
  * @brief Platform independent wrapper for QueryPerformanceFrequency
  *
  * @param Frequency output — ticks per second

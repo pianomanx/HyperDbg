@@ -130,6 +130,34 @@ equivalent, behavior-preserving.
   script-engine message-callback cast.
 - `break-control.cpp` — console-control handler routed through `platform-signal`.
 
+### App / export layer
+- `export.cpp` — `strcpy_s`×2 → `PlatformStrCpy` (new bounded-copy wrapper; also
+  unblocked once `SetupPathForFileName` became visible via the install-linux swap).
+- `platform-lib-calls.{h,c}` — added `PlatformStrCpy(Dest, DestSize, Src)`: Windows
+  `strcpy_s`; Linux does the same bounds check (empty-string + non-zero on overflow)
+  since glibc has no `strcpy_s`. ⚠️ Linux branch **not yet tested** against the exact
+  `strcpy_s` semantics — verify before relying on it.
+- `platform-lib-calls.{h,c}` — added `PlatformCopyMemory(Destination, Source, Size)`:
+  Windows `RtlCopyMemory`; Linux `memcpy` (same arg order/signature).
+
+### hwdbg
+- `hwdbg-interpreter.cpp` — `RtlCopyMemory`→`PlatformCopyMemory`, `RtlZeroMemory`→`PlatformZeroMemory`.
+
+### objects
+- `objects.cpp` — wrapper sweep: `RtlCopyMemory`×2→`PlatformCopyMemory`,
+  `RtlZeroMemory`→`PlatformZeroMemory`, `DeviceIoControl`×4→`PlatformDeviceIoControl`,
+  `GetLastError`×4 (the `"ioctl failed"` sites)→`PlatformGetLastError`; plus the two
+  enum-first-member `= {0}`→`= {}` value-init fixes (lines 30/31; line 145's struct
+  isn't enum-first, left as `= {0}`).
+
+### rev
+- `rev-ctrl.cpp` — `DeviceIoControl`→`PlatformDeviceIoControl`, `GetLastError`→`PlatformGetLastError`.
+
+### App
+- `dllmain.cpp` — whole `DllMain` body guarded `#ifdef _WIN32` (Windows DLL loader
+  entry point; no Linux equivalent, no callers in our code, body was a no-op). Linux
+  TU is intentionally empty.
+
 ### User-level debugger
 - `ud.cpp` — wrapper sweep (bucket 1): `DeviceIoControl`→`PlatformDeviceIoControl`,
   the `"ioctl failed"` `GetLastError`→`PlatformGetLastError`, `RtlZeroMemory`→`PlatformZeroMemory`,
