@@ -311,7 +311,6 @@ INT
 HyperDbgCreateHandleFromKdModule()
 {
     DWORD ErrorNum;
-    DWORD ThreadId;
 
     if (g_DeviceHandle)
     {
