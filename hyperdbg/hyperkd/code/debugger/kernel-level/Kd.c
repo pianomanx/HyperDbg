@@ -1415,6 +1415,14 @@ KdHandleNmi(PROCESSOR_DEBUGGING_STATE * DbgState)
     SpinlockLock(&DbgState->Lock);
 
     //
+    // Cores halted via NMI don't carry a register context either, so make this
+    // core's guest registers (saved on the last vm-exit) available. Without this,
+    // reading registers on an NMI-halted core dereferences a NULL DbgState->Regs
+    // and bugchecks with DRIVER_IRQL_NOT_LESS_OR_EQUAL at IRQL 0xff.
+    //
+    DbgState->Regs = VmFuncGetGuestRegs(DbgState->CoreId);
+
+    //
     // All the cores should go and manage through the following function
     //
     KdManageSystemHaltOnVmxRoot(DbgState, NULL);

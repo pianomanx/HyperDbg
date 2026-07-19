@@ -39,6 +39,15 @@ DebuggerVmcallHandler(UINT32 CoreId,
     {
     case DEBUGGER_VMCALL_VM_EXIT_HALT_SYSTEM:
     {
+        //
+        // Unlike the event-triggered halt, the manual break/halt path does not
+        // carry a register context, so point the debugging state to this core's
+        // guest registers (saved on the last vm-exit). Without this, reading
+        // registers (e.g. the 'r' command) dereferences a NULL DbgState->Regs and
+        // bugchecks with DRIVER_IRQL_NOT_LESS_OR_EQUAL at IRQL 0xff.
+        //
+        DbgState->Regs = VmFuncGetGuestRegs(CoreId);
+
         KdHandleBreakpointAndDebugBreakpoints(DbgState,
                                               DEBUGGEE_PAUSING_REASON_REQUEST_FROM_DEBUGGER,
                                               NULL);
