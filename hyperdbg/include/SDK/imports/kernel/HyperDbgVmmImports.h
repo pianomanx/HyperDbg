@@ -217,6 +217,9 @@ VmFuncGetLastVmexitRip(UINT32 CoreId);
 IMPORT_EXPORT_VMM GUEST_REGS *
 VmFuncGetGuestRegs(UINT32 CoreId);
 
+IMPORT_EXPORT_VMM VOID
+VmFuncSetGuestRegs(UINT32 CoreId, GUEST_REGS * GuestRegs);
+
 IMPORT_EXPORT_VMM UINT64
 VmFuncGetRflags();
 

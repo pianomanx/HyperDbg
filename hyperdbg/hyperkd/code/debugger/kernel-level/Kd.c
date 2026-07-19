@@ -1415,14 +1415,6 @@ KdHandleNmi(PROCESSOR_DEBUGGING_STATE * DbgState)
     SpinlockLock(&DbgState->Lock);
 
     //
-    // Cores halted via NMI don't carry a register context either, so make this
-    // core's guest registers (saved on the last vm-exit) available. Without this,
-    // reading registers on an NMI-halted core dereferences a NULL DbgState->Regs
-    // and bugchecks with DRIVER_IRQL_NOT_LESS_OR_EQUAL at IRQL 0xff.
-    //
-    DbgState->Regs = VmFuncGetGuestRegs(DbgState->CoreId);
-
-    //
     // All the cores should go and manage through the following function
     //
     KdManageSystemHaltOnVmxRoot(DbgState, NULL);
@@ -2551,7 +2543,7 @@ KdDispatchAndPerformCommandsFromDebugger(PROCESSOR_DEBUGGING_STATE * DbgState)
                 //
                 if (CallstackPacket->BaseAddress == (UINT64)NULL)
                 {
-                    CallstackPacket->BaseAddress = DbgState->Regs->rsp;
+                    CallstackPacket->BaseAddress = VmFuncGetGuestRegs(DbgState->CoreId)->rsp;
                 }
 
                 //
@@ -2606,7 +2598,7 @@ KdDispatchAndPerformCommandsFromDebugger(PROCESSOR_DEBUGGING_STATE * DbgState)
                 //
                 // Read registers
                 //
-                if (DebuggerCommandReadRegisters(DbgState->Regs, ReadRegisterPacket))
+                if (DebuggerCommandReadRegisters(VmFuncGetGuestRegs(DbgState->CoreId), ReadRegisterPacket))
                 {
                     ReadRegisterPacket->KernelStatus = DEBUGGER_OPERATION_WAS_SUCCESSFUL;
                 }
@@ -2640,7 +2632,7 @@ KdDispatchAndPerformCommandsFromDebugger(PROCESSOR_DEBUGGING_STATE * DbgState)
                 //
                 // Write register
                 //
-                if (SetRegValue(DbgState->Regs, WriteRegisterPacket->RegisterId, WriteRegisterPacket->Value))
+                if (SetRegValue(VmFuncGetGuestRegs(DbgState->CoreId), WriteRegisterPacket->RegisterId, WriteRegisterPacket->Value))
                 {
                     WriteRegisterPacket->KernelStatus = DEBUGGER_OPERATION_WAS_SUCCESSFUL;
                 }
@@ -2756,7 +2748,8 @@ KdDispatchAndPerformCommandsFromDebugger(PROCESSOR_DEBUGGING_STATE * DbgState)
                 if (DebuggerPerformRunScript(DbgState,
                                              NULL,
                                              ScriptPacket,
-                                             &g_EventTriggerDetail))
+                                             &g_EventTriggerDetail,
+                                             VmFuncGetGuestRegs(DbgState->CoreId)))
                 {
                     //
                     // Set status

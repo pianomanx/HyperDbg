@@ -39,15 +39,6 @@ DebuggerVmcallHandler(UINT32 CoreId,
     {
     case DEBUGGER_VMCALL_VM_EXIT_HALT_SYSTEM:
     {
-        //
-        // Unlike the event-triggered halt, the manual break/halt path does not
-        // carry a register context, so point the debugging state to this core's
-        // guest registers (saved on the last vm-exit). Without this, reading
-        // registers (e.g. the 'r' command) dereferences a NULL DbgState->Regs and
-        // bugchecks with DRIVER_IRQL_NOT_LESS_OR_EQUAL at IRQL 0xff.
-        //
-        DbgState->Regs = VmFuncGetGuestRegs(CoreId);
-
         KdHandleBreakpointAndDebugBreakpoints(DbgState,
                                               DEBUGGEE_PAUSING_REASON_REQUEST_FROM_DEBUGGER,
                                               NULL);
@@ -57,17 +48,21 @@ DebuggerVmcallHandler(UINT32 CoreId,
     case DEBUGGER_VMCALL_VM_EXIT_HALT_SYSTEM_AS_A_RESULT_OF_TRIGGERING_EVENT:
     {
         DEBUGGER_TRIGGERED_EVENT_DETAILS * TriggeredEventDetail = (DEBUGGER_TRIGGERED_EVENT_DETAILS *)OptionalParam1;
-        PGUEST_REGS                        TempReg              = NULL;
-
-        TempReg = DbgState->Regs;
+        GUEST_REGS *                       TempReg              = NULL;
 
         //
-        // We won't send current vmcall registers
-        // instead we send the registers provided
-        // from the third parameter
+        // Get the original guest registers
         //
-        DbgState->Regs = (GUEST_REGS *)OptionalParam2;
+        TempReg = VmFuncGetGuestRegs(DbgState->CoreId);
 
+        //
+        // We won't send current vmcall registers instead we send the registers provided from the third parameter
+        //
+        VmFuncSetGuestRegs(DbgState->CoreId, (GUEST_REGS *)OptionalParam2);
+
+        //
+        // Handle the break (pause)
+        //
         KdHandleBreakpointAndDebugBreakpoints(DbgState,
                                               DEBUGGEE_PAUSING_REASON_DEBUGGEE_EVENT_TRIGGERED,
                                               TriggeredEventDetail);
@@ -75,7 +70,7 @@ DebuggerVmcallHandler(UINT32 CoreId,
         //
         // Restore the register
         //
-        DbgState->Regs = TempReg;
+        VmFuncSetGuestRegs(DbgState->CoreId, TempReg);
 
         Result = TRUE;
         break;

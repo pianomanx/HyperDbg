@@ -1120,29 +1120,10 @@ ScriptEngineFunctionPause(
             TriggeredEventDetail.Stage = VMM_CALLBACK_CALLING_STAGE_PRE_EVENT_EMULATION;
         }
 
-        if (VmFuncVmxGetCurrentExecutionMode() == TRUE)
-        {
-            //
-            // The guest is already in vmx-root mode
-            // Halt other cores
-            //
-
-            KdHandleBreakpointAndDebugBreakpointsCallback(
-                CurrentCore,
-                DEBUGGEE_PAUSING_REASON_DEBUGGEE_EVENT_TRIGGERED,
-                &TriggeredEventDetail);
-        }
-        else
-        {
-            //
-            // The guest is on vmx non-root mode, the first parameter
-            // is context and the second parameter is tag
-            //
-            VmFuncVmxVmcall(DEBUGGER_VMCALL_VM_EXIT_HALT_SYSTEM_AS_A_RESULT_OF_TRIGGERING_EVENT,
-                            (UINT64)&TriggeredEventDetail,
-                            (UINT64)GuestRegs,
-                            (UINT64)NULL);
-        }
+        //
+        // Notify debugger about the pause (whether from VMX root-mode or not root)
+        //
+        DebuggerPerformBreakToDebuggerByCoreId(CurrentCore, NULL, &TriggeredEventDetail, GuestRegs);
     }
     else
     {
@@ -1334,7 +1315,7 @@ ApplyFormatSpecifier(const CHAR * CurrentSpecifier, CHAR * FinalBuffer, PUINT32 
     UINT32 TempBufferLen      = 0;
     CHAR   TempBuffer[50 + 1] = {
         0}; // Maximum uint64_t is 18446744073709551615 + 1 thus its 20 character
-              // for maximum buffer + 1 end char null but we alloc 50 to be sure
+            // for maximum buffer + 1 end char null but we alloc 50 to be sure
 
     *CurrentProcessedPositionFromStartOfFormat =
         *CurrentProcessedPositionFromStartOfFormat + (UINT32)strlen(CurrentSpecifier);

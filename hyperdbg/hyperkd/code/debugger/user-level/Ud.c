@@ -359,7 +359,6 @@ VOID
 UdReadRegisters(PROCESSOR_DEBUGGING_STATE * DbgState,
                 UINT32                      RegisterId)
 {
-    UNREFERENCED_PARAMETER(DbgState);
     UNREFERENCED_PARAMETER(RegisterId);
 
     PDEBUGGER_UD_COMMAND_PACKET         ActionRequest;
@@ -374,7 +373,7 @@ UdReadRegisters(PROCESSOR_DEBUGGING_STATE * DbgState,
     //
     // *** Here, we should read the registers and put them in the optional storage buffer ***
     //
-    DebuggerCommandReadRegisters(DbgState->Regs, RegDesc);
+    DebuggerCommandReadRegisters(VmFuncGetGuestRegs(DbgState->CoreId), RegDesc);
 
     //
     // Set the register request result
@@ -427,7 +426,8 @@ UdRunScript(PROCESSOR_DEBUGGING_STATE * DbgState)
     if (DebuggerPerformRunScript(DbgState,
                                  NULL,
                                  ScriptPacket,
-                                 &EventTriggerDetail))
+                                 &EventTriggerDetail,
+                                 VmFuncGetGuestRegs(DbgState->CoreId)))
     {
         //
         // Check if we need to format the output or not
