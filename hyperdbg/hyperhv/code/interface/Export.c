@@ -366,6 +366,18 @@ VmFuncGetLastVmexitRip(UINT32 CoreId)
 }
 
 /**
+ * @brief Get the guest's general-purpose registers of the target core
+ *
+ * @param CoreId Target core's ID
+ * @return GUEST_REGS *
+ */
+GUEST_REGS *
+VmFuncGetGuestRegs(UINT32 CoreId)
+{
+    return g_GuestState[CoreId].Regs;
+}
+
+/**
  * @brief Inject pending external interrupts
  *
  * @param CoreId Target core's ID
