@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file script-engine-wrapper.cpp
  * @author M.H. Gholamrezaei (mh@hyperdbg.org)
  * @author Sina Karvandi (sina@hyperdbg.org)
