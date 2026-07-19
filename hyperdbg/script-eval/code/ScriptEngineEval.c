@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file ScriptEngineEval.c
  * @author M.H. Gholamrezaei (mh@hyperdbg.org)
  * @author Sina Karvandi (sina@hyperdbg.org)
@@ -22,7 +22,7 @@ ScriptEngineTypedLocalRangeIsValid(PSCRIPT_ENGINE_GENERAL_REGISTERS Registers, U
 }
 
 static BOOLEAN
-ScriptEngineTypedTransfer(PSCRIPT_ENGINE_GENERAL_REGISTERS Registers,
+ScriptEngineTransferMemory(PSCRIPT_ENGINE_GENERAL_REGISTERS Registers,
                           UINT64 Address,
                           UINT64 AddressSpace,
                           PVOID Buffer,
@@ -390,7 +390,7 @@ ScriptEngineExecute(PGUEST_REGS                      GuestRegs,
         SrcVal2 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src2, FALSE);
         DesVal = 0;
         if ((SrcVal2 != 1 && SrcVal2 != 2 && SrcVal2 != 4 && SrcVal2 != 8) ||
-            !ScriptEngineTypedTransfer(ScriptGeneralRegisters, SrcVal0, SrcVal1, &DesVal, (UINT32)SrcVal2, FALSE))
+            !ScriptEngineTransferMemory(ScriptGeneralRegisters, SrcVal0, SrcVal1, &DesVal, (UINT32)SrcVal2, FALSE))
             HasError = TRUE;
         else
             SetValue(GuestRegs, ScriptGeneralRegisters, Des, DesVal);
@@ -408,7 +408,7 @@ ScriptEngineExecute(PGUEST_REGS                      GuestRegs,
         SrcVal2 = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src2, FALSE);
         DesVal  = GetValue(GuestRegs, ActionDetail, ScriptGeneralRegisters, Src3, FALSE);
         if ((DesVal != 1 && DesVal != 2 && DesVal != 4 && DesVal != 8) ||
-            !ScriptEngineTypedTransfer(ScriptGeneralRegisters, SrcVal1, SrcVal2, &SrcVal0, (UINT32)DesVal, TRUE))
+            !ScriptEngineTransferMemory(ScriptGeneralRegisters, SrcVal1, SrcVal2, &SrcVal0, (UINT32)DesVal, TRUE))
             HasError = TRUE;
         break;
     }
@@ -426,7 +426,7 @@ ScriptEngineExecute(PGUEST_REGS                      GuestRegs,
         while (Done < SrcVal2 && !HasError)
         {
             UINT32 Chunk = (UINT32)((SrcVal2 - Done) > sizeof(ZeroBuffer) ? sizeof(ZeroBuffer) : (SrcVal2 - Done));
-            if (!ScriptEngineTypedTransfer(ScriptGeneralRegisters, SrcVal0 + Done, SrcVal1, ZeroBuffer, Chunk, TRUE))
+            if (!ScriptEngineTransferMemory(ScriptGeneralRegisters, SrcVal0 + Done, SrcVal1, ZeroBuffer, Chunk, TRUE))
                 HasError = TRUE;
             Done += Chunk;
         }
@@ -454,8 +454,8 @@ ScriptEngineExecute(PGUEST_REGS                      GuestRegs,
             {
                 UINT32 Chunk = (UINT32)((Size - Done) > sizeof(MovingBuffer) ? sizeof(MovingBuffer) : (Size - Done));
                 UINT64 Offset = Backward ? Size - Done - Chunk : Done;
-                if (!ScriptEngineTypedTransfer(ScriptGeneralRegisters, SrcVal2 + Offset, DesVal, MovingBuffer, Chunk, FALSE) ||
-                    !ScriptEngineTypedTransfer(ScriptGeneralRegisters, SrcVal0 + Offset, SrcVal1, MovingBuffer, Chunk, TRUE))
+                if (!ScriptEngineTransferMemory(ScriptGeneralRegisters, SrcVal2 + Offset, DesVal, MovingBuffer, Chunk, FALSE) ||
+                    !ScriptEngineTransferMemory(ScriptGeneralRegisters, SrcVal0 + Offset, SrcVal1, MovingBuffer, Chunk, TRUE))
                     HasError = TRUE;
                 Done += Chunk;
             }

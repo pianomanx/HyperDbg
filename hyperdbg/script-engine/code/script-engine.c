@@ -40,6 +40,33 @@ static PVARIABLE_TYPE           CurrentStructDefinition;
 static PSCRIPT_ENGINE_TOKEN     LastStructObject;
 static PVARIABLE_TYPE           LastStructObjectType;
 
+static unsigned int
+GetStructPointerAddressSpace(PVARIABLE_TYPE PointerType, PSCRIPT_ENGINE_TOKEN PointerToken)
+{
+    if (PointerToken && PointerToken->AddressSpace)
+    {
+        return PointerToken->AddressSpace;
+    }
+
+    if (PointerType && PointerType->PointerProvenance == POINTER_PROVENANCE_LOCAL)
+    {
+        return SCRIPT_ENGINE_ADDRESS_SPACE_LOCAL;
+    }
+
+    return SCRIPT_ENGINE_ADDRESS_SPACE_REMOTE;
+}
+
+static PVARIABLE_TYPE
+CreateStructPointerType(PVARIABLE_TYPE BaseType, POINTER_PROVENANCE Provenance)
+{
+    PVARIABLE_TYPE PointerType = CreatePointerType(BaseType);
+    if (PointerType)
+    {
+        PointerType->PointerProvenance = Provenance;
+    }
+    return PointerType;
+}
+
 static VOID
 ResetStructDeclarators(VOID)
 {
@@ -1077,6 +1104,7 @@ CodeGen(PSCRIPT_ENGINE_TOKEN_LIST MatchedStack, PSYMBOL_BUFFER CodeBuffer, PSCRI
         }
         else if (!strcmp(Operator->Value, "@STRUCT_POINTER_CAST"))
         {
+            PVARIABLE_TYPE RemotePointerType;
             PSYMBOL Symbol;
             Op0 = Pop(MatchedStack);
             while (MatchedStack->Pointer && Top(MatchedStack)->Type != LOCAL_UNRESOLVED_ID && Top(MatchedStack)->Type != LOCAL_ID)
@@ -1089,7 +1117,16 @@ CodeGen(PSCRIPT_ENGINE_TOKEN_LIST MatchedStack, PSYMBOL_BUFFER CodeBuffer, PSCRI
                 *Error = SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE;
                 break;
             }
-            LastStructObjectType->PointerProvenance = POINTER_PROVENANCE_REMOTE;
+            RemotePointerType = CreateStructPointerType(LastStructObjectType->Base, POINTER_PROVENANCE_REMOTE);
+            if (!RemotePointerType)
+            {
+                *Error = SCRIPT_ENGINE_ERROR_SYNTAX;
+                RemoveToken(&Op0);
+                break;
+            }
+            LastStructObjectType           = RemotePointerType;
+            LastStructObject->VariableType = RemotePointerType;
+            SetLocalIdentifierVariableType(LastStructObject, RemotePointerType);
             Symbol = NewSymbol(); Symbol->Type = SYMBOL_SEMANTIC_RULE_TYPE; Symbol->Value = FUNC_MOV; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
             Symbol = ToSymbol(Op0, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
             Symbol = ToSymbol(LastStructObject, Error); PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
@@ -1103,6 +1140,7 @@ CodeGen(PSCRIPT_ENGINE_TOKEN_LIST MatchedStack, PSYMBOL_BUFFER CodeBuffer, PSCRI
             BOOLEAN          IsArrow = strstr(Operator->Value, "ARROW") != NULL;
             BOOLEAN          IsRead  = strstr(Operator->Value, "READ") != NULL;
             PVARIABLE_TYPE   BaseType;
+            PVARIABLE_TYPE   PointerType = NULL;
             PSTRUCT_MEMBER   Member;
             PSCRIPT_ENGINE_TOKEN AddressToken;
             PSYMBOL          Symbol;
@@ -1124,6 +1162,7 @@ CodeGen(PSCRIPT_ENGINE_TOKEN_LIST MatchedStack, PSYMBOL_BUFFER CodeBuffer, PSCRI
                     break;
                 }
                 AddressToken = Op1;
+                PointerType  = BaseType;
                 BaseType     = BaseType->Base;
             }
             else
@@ -1152,8 +1191,8 @@ CodeGen(PSCRIPT_ENGINE_TOKEN_LIST MatchedStack, PSYMBOL_BUFFER CodeBuffer, PSCRI
             }
             Temp->VariableType = Member->Type;
             Temp->IsAddress    = TRUE;
-            Temp->AddressSpace = IsArrow && ((PVARIABLE_TYPE)Op1->VariableType)->PointerProvenance != POINTER_PROVENANCE_LOCAL ?
-                                     SCRIPT_ENGINE_ADDRESS_SPACE_REMOTE :
+            Temp->AddressSpace = IsArrow ?
+                                     GetStructPointerAddressSpace(PointerType, Op1) :
                                      (Op1->AddressSpace ? Op1->AddressSpace : SCRIPT_ENGINE_ADDRESS_SPACE_LOCAL);
 
             Symbol = NewSymbol(); Symbol->Type = SYMBOL_SEMANTIC_RULE_TYPE; Symbol->Value = FUNC_ADD; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
@@ -2011,6 +2050,31 @@ CodeGen(PSCRIPT_ENGINE_TOKEN_LIST MatchedStack, PSYMBOL_BUFFER CodeBuffer, PSCRI
             }
 
             if (Op0->VariableType && Op1->VariableType &&
+                ((PVARIABLE_TYPE)Op0->VariableType)->Kind == TY_PTR &&
+                ((PVARIABLE_TYPE)Op1->VariableType)->Kind == TY_PTR)
+            {
+                PVARIABLE_TYPE SourcePointerType      = (PVARIABLE_TYPE)Op0->VariableType;
+                PVARIABLE_TYPE DestinationPointerType = (PVARIABLE_TYPE)Op1->VariableType;
+                PVARIABLE_TYPE AssignedPointerType    = CreateStructPointerType(DestinationPointerType->Base,
+                                                                              SourcePointerType->PointerProvenance);
+                if (!AssignedPointerType)
+                {
+                    *Error = SCRIPT_ENGINE_ERROR_SYNTAX;
+                    break;
+                }
+
+                Op1->VariableType = AssignedPointerType;
+                if (Op1->Type == LOCAL_ID || Op1->Type == LOCAL_UNRESOLVED_ID)
+                {
+                    SetLocalIdentifierVariableType(Op1, AssignedPointerType);
+                }
+                else if (Op1->Type == GLOBAL_ID || Op1->Type == GLOBAL_UNRESOLVED_ID)
+                {
+                    SetGlobalIdentifierVariableType(Op1, AssignedPointerType);
+                }
+            }
+
+            if (Op0->VariableType && Op1->VariableType &&
                 ((PVARIABLE_TYPE)Op0->VariableType)->Kind == TY_STRUCT &&
                 ((PVARIABLE_TYPE)Op1->VariableType)->Kind == TY_STRUCT)
             {
@@ -2373,6 +2437,82 @@ CodeGen(PSCRIPT_ENGINE_TOKEN_LIST MatchedStack, PSYMBOL_BUFFER CodeBuffer, PSCRI
             {
                 break;
             }
+        }
+        else if (!strcmp(Operator->Value, "@REFERENCE"))
+        {
+            POINTER_PROVENANCE Provenance;
+            unsigned int       AddressSpace;
+
+            Op0 = Pop(MatchedStack);
+            if (!Op0->VariableType)
+            {
+                *Error = SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE;
+                RemoveToken(&Op0);
+                break;
+            }
+
+            AddressSpace = Op0->AddressSpace ? Op0->AddressSpace : SCRIPT_ENGINE_ADDRESS_SPACE_LOCAL;
+            Provenance   = AddressSpace == SCRIPT_ENGINE_ADDRESS_SPACE_REMOTE ?
+                               POINTER_PROVENANCE_REMOTE :
+                               POINTER_PROVENANCE_LOCAL;
+
+            Temp = NewTemp(Error);
+            if (*Error != SCRIPT_ENGINE_ERROR_FREE)
+            {
+                RemoveToken(&Op0);
+                break;
+            }
+            Temp->VariableType = CreateStructPointerType((PVARIABLE_TYPE)Op0->VariableType, Provenance);
+            Temp->AddressSpace = AddressSpace;
+            if (!Temp->VariableType)
+            {
+                *Error = SCRIPT_ENGINE_ERROR_SYNTAX;
+                FreeTemp(Temp);
+                RemoveToken(&Op0);
+                break;
+            }
+
+            Op0Symbol  = ToSymbol(Op0, Error);
+            TempSymbol = ToSymbol(Temp, Error);
+            PushSymbol(CodeBuffer, OperatorSymbol);
+            PushSymbol(CodeBuffer, Op0Symbol);
+            PushSymbol(CodeBuffer, TempSymbol);
+            FreeTemp(Op0);
+            Push(MatchedStack, Temp);
+        }
+        else if (!strcmp(Operator->Value, "@POI") &&
+                 MatchedStack->Pointer &&
+                 Top(MatchedStack)->VariableType &&
+                 ((PVARIABLE_TYPE)Top(MatchedStack)->VariableType)->Kind == TY_PTR &&
+                 ((PVARIABLE_TYPE)Top(MatchedStack)->VariableType)->Base &&
+                 ((PVARIABLE_TYPE)Top(MatchedStack)->VariableType)->Base->Kind == TY_STRUCT)
+        {
+            PVARIABLE_TYPE PointerType;
+            PSYMBOL        MoveSymbol;
+
+            Op0         = Pop(MatchedStack);
+            PointerType = (PVARIABLE_TYPE)Op0->VariableType;
+            Temp        = NewTemp(Error);
+            if (*Error != SCRIPT_ENGINE_ERROR_FREE)
+            {
+                RemoveToken(&Op0);
+                break;
+            }
+
+            Temp->VariableType = PointerType->Base;
+            Temp->AddressSpace = GetStructPointerAddressSpace(PointerType, Op0);
+            Temp->IsAddress    = TRUE;
+            Op0Symbol          = ToSymbol(Op0, Error);
+            TempSymbol         = ToSymbol(Temp, Error);
+            MoveSymbol         = NewSymbol();
+            MoveSymbol->Type   = SYMBOL_SEMANTIC_RULE_TYPE;
+            MoveSymbol->Value  = FUNC_MOV;
+            PushSymbol(CodeBuffer, MoveSymbol);
+            PushSymbol(CodeBuffer, Op0Symbol);
+            PushSymbol(CodeBuffer, TempSymbol);
+            RemoveSymbol(&MoveSymbol);
+            FreeTemp(Op0);
+            Push(MatchedStack, Temp);
         }
         else if (IsType1Func(Operator))
         {
