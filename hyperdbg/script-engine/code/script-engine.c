@@ -2792,7 +2792,59 @@ CodeGen(PSCRIPT_ENGINE_TOKEN_LIST MatchedStack, PSYMBOL_BUFFER CodeBuffer, PSCRI
             BOOL Handled = FALSE;
             Op1          = TopIndexed(MatchedStack, 1);
 
-            if (((VARIABLE_TYPE *)Op1->VariableType)->Kind == TY_PTR)
+            if (Op1->IsAddress && ((VARIABLE_TYPE *)Op1->VariableType)->Kind != TY_PTR)
+            {
+                PVARIABLE_TYPE LValueType = (PVARIABLE_TYPE)Op1->VariableType;
+                PSYMBOL        Symbol;
+
+                if (LValueType->Size != 1 && LValueType->Size != 2 &&
+                    LValueType->Size != 4 && LValueType->Size != 8)
+                {
+                    *Error  = SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE;
+                    Op0     = Pop(MatchedStack);
+                    Op1     = Pop(MatchedStack);
+                    Handled = TRUE;
+                    break;
+                }
+
+                Op0  = Pop(MatchedStack);
+                Op1  = Pop(MatchedStack);
+                Temp = NewTemp(Error);
+                if (*Error != SCRIPT_ENGINE_ERROR_FREE)
+                {
+                    Handled = TRUE;
+                    break;
+                }
+                Temp->VariableType = LValueType;
+
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_SEMANTIC_RULE_TYPE; Symbol->Value = FUNC_TYPED_LOAD; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Op1Symbol = ToSymbol(Op1, Error); PushSymbol(CodeBuffer, Op1Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = Op1->AddressSpace; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = LValueType->Size; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                TempSymbol = ToSymbol(Temp, Error); PushSymbol(CodeBuffer, TempSymbol);
+
+                PushSymbol(CodeBuffer, OperatorSymbol);
+                Op0Symbol = ToSymbol(Op0, Error); PushSymbol(CodeBuffer, Op0Symbol);
+                PushSymbol(CodeBuffer, TempSymbol);
+                PushSymbol(CodeBuffer, TempSymbol);
+
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_SEMANTIC_RULE_TYPE; Symbol->Value = FUNC_TYPED_STORE; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                PushSymbol(CodeBuffer, TempSymbol);
+                PushSymbol(CodeBuffer, Op1Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = Op1->AddressSpace; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+                Symbol = NewSymbol(); Symbol->Type = SYMBOL_NUM_TYPE; Symbol->Value = LValueType->Size; PushSymbol(CodeBuffer, Symbol); RemoveSymbol(&Symbol);
+
+                FreeTemp(Op0);
+                FreeTemp(Op1);
+                FreeTemp(Temp);
+                Handled = TRUE;
+                if (*Error != SCRIPT_ENGINE_ERROR_FREE)
+                {
+                    break;
+                }
+            }
+
+            if (!Handled && ((VARIABLE_TYPE *)Op1->VariableType)->Kind == TY_PTR)
             {
                 if (!strcmp(Operator->Value, "@ADD_ASSIGNMENT"))
                 {
