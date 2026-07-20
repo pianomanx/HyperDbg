@@ -28,7 +28,7 @@ TrimWhitespace(CHAR * Str, UINT8 MaxLen)
         Str++; // Trim leading space
     if (*Str == '\0')
         return Str;
-    End = Str + strnlen_s(Str, MaxLen) - 1;
+    End = Str + PlatformStrnlen(Str, MaxLen) - 1;
     while (End > Str && (*End == ' ' || *End == '\n' || *End == '\r'))
         End--;
     *(End + 1) = '\0';
@@ -44,7 +44,7 @@ TrimWhitespace(CHAR * Str, UINT8 MaxLen)
 CHAR *
 ToLower(CHAR * Str)
 {
-    UINT8  StrLength   = (UINT8)strnlen_s(Str, PCI_ID_AS_STR_LENGTH);
+    UINT8  StrLength   = (UINT8)PlatformStrnlen(Str, PCI_ID_AS_STR_LENGTH);
     CHAR * CurrentChar = Str;
 
     while (CurrentChar < Str + StrLength)

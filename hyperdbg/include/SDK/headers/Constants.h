@@ -18,7 +18,7 @@
 //////////////////////////////////////////////////
 
 #define VERSION_MAJOR 0
-#define VERSION_MINOR 21
+#define VERSION_MINOR 22
 #define VERSION_PATCH 0
 
 #define BETA_VERSION FALSE
@@ -515,6 +515,12 @@ const UCHAR BuildSignature[] = {
  */
 #define MaximumSearchResults 0x1000
 
+/**
+ * @brief maximum nodes that will be returned by !dl dl command
+ *
+ */
+#define DL_DEFAULT_MAX_NODES 0x100
+
 //////////////////////////////////////////////////
 //                 Script Engine                //
 //////////////////////////////////////////////////
@@ -680,12 +686,13 @@ typedef enum _SEGMENT_REGISTERS
  * @brief Transparent-mode feature mask
  *
  */
-#define TRANSPARENT_EVADE_MASK_SYSCALL_HOOK 0x00000001
-#define TRANSPARENT_EVADE_MASK_CPUID        0x00000002
-#define TRANSPARENT_EVADE_MASK_MSR          0x00000004
-#define TRANSPARENT_EVADE_MASK_TRAP_FLAG    0x00000008
+#define TRANSPARENT_EVADE_MASK_SYSCALL_HOOK                0x00000001
+#define TRANSPARENT_EVADE_MASK_CPUID                       0x00000002
+#define TRANSPARENT_EVADE_MASK_MSR                         0x00000004
+#define TRANSPARENT_EVADE_MASK_TRAP_FLAG                   0x00000008
+#define TRANSPARENT_EVADE_CHECK_NON_LONG_MODE_RIP_OVERFLOW 0x00000010
 #define TRANSPARENT_EVADE_MASK_ALL \
-    (TRANSPARENT_EVADE_MASK_SYSCALL_HOOK | TRANSPARENT_EVADE_MASK_CPUID | TRANSPARENT_EVADE_MASK_MSR | TRANSPARENT_EVADE_MASK_TRAP_FLAG)
+    (TRANSPARENT_EVADE_MASK_SYSCALL_HOOK | TRANSPARENT_EVADE_MASK_CPUID | TRANSPARENT_EVADE_MASK_MSR | TRANSPARENT_EVADE_MASK_TRAP_FLAG | TRANSPARENT_EVADE_CHECK_NON_LONG_MODE_RIP_OVERFLOW)
 #define TRANSPARENT_EVADE_MASK_DEFAULT TRANSPARENT_EVADE_MASK_ALL
 
 /**

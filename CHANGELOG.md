@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.22.0.0] - 2026-07-20
+New release of the HyperDbg Debugger.
+
+### Added
+- Added a new 'dl' command to traverse linked lists using virtual addresses, thanks to [@FallinBinary](https://github.com/FallinBinary) ([link](https://docs.hyperdbg.org/commands/debugging-commands/dl))([link](https://github.com/HyperDbg/HyperDbg/pull/635))
+- Added a new '!dl' command to traverse linked lists using physical addresses, thanks to [@FallinBinary](https://github.com/FallinBinary) ([link](https://docs.hyperdbg.org/commands/extension-commands/dl))([link](https://github.com/HyperDbg/HyperDbg/pull/635))
+- Exported SDK API for traversing linked lists (using virtual and physical memory) ([link](https://github.com/HyperDbg/HyperDbg/pull/635))
+- Added 'pname' to the '!pt' command ([link](https://github.com/HyperDbg/HyperDbg/commit/00c81606fac70d18e7f61fd6509cac74662b116b))
+- Added '!pt' initialization to a separate thread ([link](https://github.com/HyperDbg/HyperDbg/commit/07630fc05ac8501602a79707b51d9ebe62b70c0c))
+- Added new definitions for GCC Linux compilation ([link](https://github.com/HyperDbg/HyperDbg/commit/4d398662ce631c778fb069460da653e8c24e9a94))([link](https://github.com/HyperDbg/HyperDbg/commit/ffc2595941e54f34add73ccf35b9c1b90a37a0a8))
+- Added mitigation for hypervisor crash in a non- long mode RIP overflow ([link](https://github.com/HyperDbg/HyperDbg/pull/642))
+- Added new lib calls and reverted sleep macro to functions ([link](https://github.com/HyperDbg/HyperDbg/commit/38a59b795fd8bf9474feb3bfbd7684b6319ca941))
+- Added status for porting HyperDbg to Linux ([link](https://github.com/HyperDbg/HyperDbg/commit/5bd330c6deaa1e39a679f5af4f2e1a570aae1957))
+- Add 'ud.cpp' new additions to the platform API and guards ([link](https://github.com/HyperDbg/HyperDbg/commit/3805190db8e81c65971209ad5c648ae65fdcc7c6))
+- Added driver install for Linux stub, and new platform functions and 1:1 mappings ([link](https://github.com/HyperDbg/HyperDbg/commit/d6f70eecd9205453893f9dff8fc102f4a794785f))
+- Added a new platform IOCTL function and some sweeps of already existing platform functions ([link](https://github.com/HyperDbg/HyperDbg/commit/0c7adbd244ef54ad45ca9155b4268df3d95de393))
+- Added structures in the script engine, thanks to [@xmaple555](https://github.com/xmaple555) ([link](https://docs.hyperdbg.org/commands/scripting-language/structures-and-arrays#structures))([link](https://github.com/HyperDbg/HyperDbg/pull/649))
+
+### Changed
+- Fix the double-enable error of the '!pt' command and create a new window for the suspended process ([link](https://github.com/HyperDbg/HyperDbg/commit/01b6f1ca32eb437e7faad327c853b5eb5131da01))
+- Fix creating a new window for the suspended process in the '!pt' command ([link](https://github.com/HyperDbg/HyperDbg/commit/01b6f1ca32eb437e7faad327c853b5eb5131da01))
+- Compiling user-mode KD functions on Linux ([link](https://github.com/HyperDbg/HyperDbg/commit/2a2425dc68a62bd59331b94d20d7881a1756c472))
+- One-to-one conversion and stubbed `w_char` issue ([link](https://github.com/HyperDbg/HyperDbg/commit/72e18d7ad1ccea1c0b0e863d1f0208d16b04030b))
+- Compiling Linux PE-parser (left for the future) ([link](https://github.com/HyperDbg/HyperDbg/commit/1e19826b6cf870b6e69b489fdffc8faa87d0f79f))
+- Fix `DRIVER_IRQL_NOT_LESS_OR_EQUAL` when reading registers on a manually-halted core, thanks to [@munraimix](https://github.com/munraimix) ([link](https://github.com/HyperDbg/HyperDbg/pull/648))
+- Fix the error for referencing guest registers twice in both KD and VMX codes ([link](https://github.com/HyperDbg/HyperDbg/commit/d37352fd7ee3b7c9a4a5383c847f210dc6c3d716))
+- Fix handle compound assignment to struct members ([link](https://github.com/HyperDbg/HyperDbg/commit/9d60a4ddd484603043ad74fcc665899af7f4ff21))
+- Updated semantic scripts by adding test cases for the structs in the script engine ([link](https://github.com/HyperDbg/HyperDbg/pull/651))
+
 ## [0.21.0.0] - 2026-07-05
 New release of the HyperDbg Debugger.
 
@@ -127,7 +156,7 @@ New release of the HyperDbg Debugger.
 New release of the HyperDbg Debugger. All credit for this release goes to [@xmaple555](https://github.com/xmaple555).
 
 ### Added
-- Added 1D and 2D arrays (multidimensional arrays) in the script engine ([link](https://docs.hyperdbg.org/commands/scripting-language/variables-and-assignments#multidimensional-array))([link](https://github.com/HyperDbg/HyperDbg/pull/554))
+- Added 1D and 2D arrays (multidimensional arrays) in the script engine ([link](https://docs.hyperdbg.org/commands/scripting-language/structures-and-arrays))([link](https://github.com/HyperDbg/HyperDbg/pull/554))
 - Added compound assignments in the script engine ([link](https://docs.hyperdbg.org/commands/scripting-language/variables-and-assignments#compound-assignment))([link](https://github.com/HyperDbg/HyperDbg/pull/554))
 - Added multiple assignments in the script engine ([link](https://docs.hyperdbg.org/commands/scripting-language/variables-and-assignments#multiple-assignment))([link](https://github.com/HyperDbg/HyperDbg/pull/554))
 

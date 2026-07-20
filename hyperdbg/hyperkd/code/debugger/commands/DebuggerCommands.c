@@ -25,6 +25,17 @@ DebuggerCommandReadRegisters(GUEST_REGS *                        Regs,
 {
     GUEST_EXTRA_REGISTERS ERegs = {0};
 
+    //
+    // Defense-in-depth: never dereference a NULL register context. The halt
+    // path is expected to provide the guest registers, but if it didn't, fail
+    // gracefully instead of bugchecking (DRIVER_IRQL_NOT_LESS_OR_EQUAL) at
+    // IRQL 0xff.
+    //
+    if (Regs == NULL)
+    {
+        return FALSE;
+    }
+
     if (ReadRegisterRequest->RegisterId == DEBUGGEE_SHOW_ALL_REGISTERS)
     {
         //

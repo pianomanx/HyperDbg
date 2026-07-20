@@ -67,6 +67,7 @@ typedef int SOCKET;
 
 // Windows calling convention (no-op on Linux)
 #    define WINAPI
+#    define NTAPI
 
 // Windows module handle (equivalent to dlopen's void * on Linux)
 typedef void * HMODULE;
@@ -90,7 +91,19 @@ typedef void * HMODULE;
 #    define CTRL_LOGOFF_EVENT   5
 #    define CTRL_SHUTDOWN_EVENT 6
 
-// Win32 Sleep(milliseconds) -> POSIX usleep(microseconds)
-#    define Sleep(Milliseconds) usleep((useconds_t)(Milliseconds) * 1000)
+// Win32 process access rights / creation flags / exit-code sentinel, kept at
+// their Windows values so the user-debugger process call sites compile
+// unchanged. The underlying process wrappers are stubbed on Linux for now.
+#    define PROCESS_TERMINATE                 0x0001
+#    define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
+#    define CREATE_SUSPENDED                  0x00000004
+#    define CREATE_NEW_CONSOLE                0x00000010
+#    define STILL_ACTIVE                      0x00000103
+
+//
+// Win32 system error codes referenced by the shared device-open error handling
+//
+#    define ERROR_ACCESS_DENIED 5
+#    define ERROR_GEN_FAILURE   31
 
 #endif // HYPERDBG_ENV_LINUX

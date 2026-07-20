@@ -119,15 +119,6 @@ HyperDbgGetImmediateValueOnEaxForSyscallNumber(
     UINT64  BuffLength,
     BOOLEAN Isx86_64);
 
-VOID
-HyperDbgShowMemoryOrDisassemble(DEBUGGER_SHOW_MEMORY_STYLE   Style,
-                                UINT64                       Address,
-                                DEBUGGER_READ_MEMORY_TYPE    MemoryType,
-                                DEBUGGER_READ_READING_TYPE   ReadingType,
-                                UINT32                       Pid,
-                                UINT32                       Size,
-                                PDEBUGGER_DT_COMMAND_OPTIONS DtDetails);
-
 BOOLEAN
 HyperDbgReadMemory(UINT64                              TargetAddress,
                    DEBUGGER_READ_MEMORY_TYPE           MemoryType,
@@ -138,6 +129,22 @@ HyperDbgReadMemory(UINT64                              TargetAddress,
                    DEBUGGER_READ_MEMORY_ADDRESS_MODE * AddressMode,
                    BYTE *                              TargetBufferToStore,
                    UINT32 *                            ReturnLength);
+
+VOID
+HyperDbgShowMemoryOrDisassemble(DEBUGGER_SHOW_MEMORY_STYLE   Style,
+                                UINT64                       Address,
+                                DEBUGGER_READ_MEMORY_TYPE    MemoryType,
+                                DEBUGGER_READ_READING_TYPE   ReadingType,
+                                UINT32                       Pid,
+                                UINT32                       Size,
+                                PDEBUGGER_DT_COMMAND_OPTIONS DtDetails);
+
+VOID
+HyperDbgShowMemoryLinkedList(UINT64                    TargetAddress,
+                             DEBUGGER_READ_MEMORY_TYPE MemoryType,
+                             UINT32                    Pid,
+                             UINT64                    Offset,
+                             UINT64                    MaxNodes);
 
 VOID
 InitializeCommandsDictionary();

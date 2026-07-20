@@ -48,7 +48,7 @@ class LL1Parser:
         self.MAXIMUM_RHS_LEN = 0
 
 
-        self.SPECIAL_TOKENS = ['%', '+', '~', '++', '-', '--', "*", "/", "=", "==", "!=", ",", ";", "(", ")", "{", "}", "|", "||", ">>", ">=", "<<", "<=", "&", "&&", "^",
+        self.SPECIAL_TOKENS = ['%', '+', '~', '++', '-', '--', '->', '.', "*", "/", "=", "==", "!=", ",", ";", "(", ")", "{", "}", "|", "||", ">>", ">=", "<<", "<=", "&", "&&", "^",
                               "+=", "-=", "*=", "/=", "%=", "<<=", ">>=", "&=", "^=", "|=" , "[", "]"]
 
         # INVALID rule indicator
@@ -375,7 +375,7 @@ class LL1Parser:
                 self.FunctionsDict[L[0]] = Elements
                 continue
 
-            L = Line.split("->")
+            L = Line.split("->", 1)
             Lhs = L[0]
             Rhs = L[1].split(" ")
 
@@ -384,7 +384,7 @@ class LL1Parser:
             MapKeywordIdx2 = 0
             Idx = 0
             for X in Rhs:
-                if X[0] == ".":
+                if X and X[0] == "." and X in self.FunctionsDict:
                     HasMapKeyword = True
                     MapKeywordIdx1 = Idx 
                 elif X[0] == "@":
@@ -436,6 +436,25 @@ class LL1Parser:
 
         
     def WriteSemanticMaps(self):
+        # Serialized script buffers contain FUNC_* values.  Keep every legacy
+        # value stable and append aggregate-language additions after them.
+        aggregate_semantics = {
+            "struct_forward_declaration", "struct_definition_begin",
+            "struct_definition_end", "struct_variable_declaration",
+            "struct_member_declaration", "typedef_declaration",
+            "struct_pointer", "struct_array_dimension",
+            "struct_declarator_complete", "typed_load", "typed_store",
+            "aggregate_copy", "aggregate_zero"
+            , "struct_initializer_begin", "struct_initializer_end",
+            "struct_pointer_cast", "member_address", "member_read",
+            "member_dot_lvalue", "member_arrow_lvalue", "member_dot_read", "member_arrow_read"
+        }
+        aggregate_keywords = {"struct", "typedef"}
+        legacy_semantics = [x for x in self.SemantiRulesList if x not in aggregate_semantics]
+        new_semantics = [x for x in self.SemantiRulesList if x in aggregate_semantics]
+        legacy_keywords = [x for x in self.keywordList if x not in aggregate_keywords]
+        new_keywords = [x for x in self.keywordList if x in aggregate_keywords]
+        numbered_semantics = legacy_semantics + legacy_keywords + new_semantics + new_keywords
         
         self.CommonHeaderFileScala.write("object ScriptEvalFunc {\n  object ScriptOperators extends ChiselEnum {\n    val ")
         
@@ -463,24 +482,10 @@ class LL1Parser:
                 CheckForDuplicateList.append(X)
                 Counter += 1
         
-        for X in self.SemantiRulesList:
-        
+        for X in numbered_semantics:
             if X not in CheckForDuplicateList:
                 self.CommonHeaderFile.write("#define " + "FUNC_" + X.upper() + " " + str(Counter) + "\n")
-                self.CommonHeaderFileScala.write(", sFunc" + X.capitalize())
-                CheckForDuplicateList.append(X)
-                Counter += 1
-        
-        for X in self.keywordList:
-        
-            if X not in CheckForDuplicateList:
-                self.CommonHeaderFile.write("#define " + "FUNC_" + X.upper() + " " + str(Counter) + "\n")
-                
-                #
-                # Check if it's the last item
-                #
                 self.CommonHeaderFileScala.write(", sFunc" + X.capitalize() + "")
-                    
                 CheckForDuplicateList.append(X)
                 Counter += 1
                 
@@ -521,12 +526,7 @@ class LL1Parser:
                 self.CommonHeaderFile.write("\"" + "FUNC_" + X.upper() + "\"" + ",\n")
                 CheckForDuplicateList.append(X)
     
-        for X in self.SemantiRulesList:
-            if X not in CheckForDuplicateList:
-                self.CommonHeaderFile.write("\"" + "FUNC_" + X.upper() + "\"" + ",\n")
-                CheckForDuplicateList.append(X)
-        
-        for X in self.keywordList:
+        for X in numbered_semantics:
             if X not in CheckForDuplicateList:
                 self.CommonHeaderFile.write("\"" + "FUNC_" + X.upper() + "\"" + ",\n")
                 CheckForDuplicateList.append(X)

@@ -36,6 +36,15 @@ typedef enum _VARIABLE_TYPE_KIND
     TY_UNION,
 } VARIABLE_TYPE_KIND;
 
+typedef enum _POINTER_PROVENANCE
+{
+    POINTER_PROVENANCE_UNKNOWN,
+    POINTER_PROVENANCE_LOCAL,
+    POINTER_PROVENANCE_REMOTE,
+} POINTER_PROVENANCE;
+
+typedef struct _STRUCT_MEMBER STRUCT_MEMBER, *PSTRUCT_MEMBER;
+
 typedef struct _VARIABLE_TYPE
 {
     VARIABLE_TYPE_KIND      Kind;
@@ -44,7 +53,20 @@ typedef struct _VARIABLE_TYPE
     BOOLEAN                 IsUnsigned;
     struct _VARIABLE_TYPE * Base;
     int                     ArrayLen;
+    POINTER_PROVENANCE      PointerProvenance;
+    char *                  TagName;
+    BOOLEAN                 IsComplete;
+    PSTRUCT_MEMBER          Members;
 } VARIABLE_TYPE, *PVARIABLE_TYPE;
+
+struct _STRUCT_MEMBER
+{
+    char *                  Name;
+    PVARIABLE_TYPE          Type;
+    unsigned int            Offset;
+    unsigned int            DeclarationOrder;
+    PSTRUCT_MEMBER          Next;
+};
 
 extern VARIABLE_TYPE * VARIABLE_TYPE_UNKNOWN;
 
@@ -76,8 +98,44 @@ typedef enum _SCRIPT_ENGINE_ERROR_TYPE
     SCRIPT_ENGINE_ERROR_UNDEFINED_FUNCTION,
     SCRIPT_ENGINE_ERROR_UNDEFINED_VARIABLE_TYPE,
     SCRIPT_ENGINE_ERROR_VOID_FUNCTION_RETURNING_VALUE,
-    SCRIPT_ENGINE_ERROR_NON_VOID_FUNCTION_NOT_RETURNING_VALUE
+    SCRIPT_ENGINE_ERROR_NON_VOID_FUNCTION_NOT_RETURNING_VALUE,
+    SCRIPT_ENGINE_ERROR_UNKNOWN_STRUCT_TAG,
+    SCRIPT_ENGINE_ERROR_INCOMPLETE_TYPE,
+    SCRIPT_ENGINE_ERROR_DUPLICATE_STRUCT_DEFINITION,
+    SCRIPT_ENGINE_ERROR_DUPLICATE_STRUCT_MEMBER,
+    SCRIPT_ENGINE_ERROR_DUPLICATE_TYPEDEF,
+    SCRIPT_ENGINE_ERROR_INVALID_ARRAY_SIZE
 } SCRIPT_ENGINE_ERROR_TYPE,
     *PSCRIPT_ENGINE_ERROR_TYPE;
+
+VOID
+InitializeTypeContext(VOID);
+
+VOID
+UninitializeTypeContext(VOID);
+
+PVARIABLE_TYPE
+FindStructType(const char * TagName);
+
+PVARIABLE_TYPE
+DeclareStructType(const char * TagName);
+
+BOOLEAN
+CompleteStructType(PVARIABLE_TYPE StructType);
+
+BOOLEAN
+AddStructMember(PVARIABLE_TYPE StructType, const char * Name, PVARIABLE_TYPE MemberType);
+
+PSTRUCT_MEMBER
+FindStructMember(PVARIABLE_TYPE StructType, const char * Name);
+
+PVARIABLE_TYPE
+CreatePointerType(PVARIABLE_TYPE BaseType);
+
+PVARIABLE_TYPE
+CreateArrayType(PVARIABLE_TYPE BaseType, unsigned int ArrayLength);
+
+BOOLEAN
+AddTypedefType(const char * Name, PVARIABLE_TYPE Type);
 
 #endif

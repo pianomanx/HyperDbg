@@ -184,9 +184,9 @@ CommandPcicam(vector<CommandToken> CommandTokens, string Command)
                 ShowMessages("\nCommon Header:\nVID:DID: %04x:%04x\nVendor Name: %-17.*s\nDevice Name: %.*s\nCommand: %04x\n",
                              PcidevinfoPacket.DeviceInfo.ConfigSpace.CommonHeader.VendorId,
                              PcidevinfoPacket.DeviceInfo.ConfigSpace.CommonHeader.DeviceId,
-                             strnlen_s(CurrentVendorName, PCI_NAME_STR_LENGTH),
+                             PlatformStrnlen(CurrentVendorName, PCI_NAME_STR_LENGTH),
                              CurrentVendorName,
-                             strnlen_s(CurrentDeviceName, PCI_NAME_STR_LENGTH),
+                             PlatformStrnlen(CurrentDeviceName, PCI_NAME_STR_LENGTH),
                              CurrentDeviceName,
                              PcidevinfoPacket.DeviceInfo.ConfigSpace.CommonHeader.Command);
 

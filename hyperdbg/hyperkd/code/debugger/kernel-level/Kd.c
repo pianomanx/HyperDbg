@@ -2543,7 +2543,7 @@ KdDispatchAndPerformCommandsFromDebugger(PROCESSOR_DEBUGGING_STATE * DbgState)
                 //
                 if (CallstackPacket->BaseAddress == (UINT64)NULL)
                 {
-                    CallstackPacket->BaseAddress = DbgState->Regs->rsp;
+                    CallstackPacket->BaseAddress = VmFuncGetGuestRegs(DbgState->CoreId)->rsp;
                 }
 
                 //
@@ -2598,7 +2598,7 @@ KdDispatchAndPerformCommandsFromDebugger(PROCESSOR_DEBUGGING_STATE * DbgState)
                 //
                 // Read registers
                 //
-                if (DebuggerCommandReadRegisters(DbgState->Regs, ReadRegisterPacket))
+                if (DebuggerCommandReadRegisters(VmFuncGetGuestRegs(DbgState->CoreId), ReadRegisterPacket))
                 {
                     ReadRegisterPacket->KernelStatus = DEBUGGER_OPERATION_WAS_SUCCESSFUL;
                 }
@@ -2632,7 +2632,7 @@ KdDispatchAndPerformCommandsFromDebugger(PROCESSOR_DEBUGGING_STATE * DbgState)
                 //
                 // Write register
                 //
-                if (SetRegValue(DbgState->Regs, WriteRegisterPacket->RegisterId, WriteRegisterPacket->Value))
+                if (SetRegValue(VmFuncGetGuestRegs(DbgState->CoreId), WriteRegisterPacket->RegisterId, WriteRegisterPacket->Value))
                 {
                     WriteRegisterPacket->KernelStatus = DEBUGGER_OPERATION_WAS_SUCCESSFUL;
                 }
@@ -2748,7 +2748,8 @@ KdDispatchAndPerformCommandsFromDebugger(PROCESSOR_DEBUGGING_STATE * DbgState)
                 if (DebuggerPerformRunScript(DbgState,
                                              NULL,
                                              ScriptPacket,
-                                             &g_EventTriggerDetail))
+                                             &g_EventTriggerDetail,
+                                             VmFuncGetGuestRegs(DbgState->CoreId)))
                 {
                     //
                     // Set status

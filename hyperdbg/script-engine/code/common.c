@@ -54,6 +54,8 @@ NewUnknownToken()
     Token->MaxLen            = TOKEN_VALUE_MAX_LEN;
     Token->VariableType      = (VARIABLE_TYPE *)VARIABLE_TYPE_LONG;
     Token->VariableMemoryIdx = 0;
+    Token->AddressSpace      = 0;
+    Token->IsAddress         = FALSE;
 
     return Token;
 }
@@ -91,6 +93,8 @@ NewToken(SCRIPT_ENGINE_TOKEN_TYPE Type, char * Value)
     Token->Value             = (char *)calloc(Token->MaxLen + 1, sizeof(char));
     Token->VariableType      = (VARIABLE_TYPE *)VARIABLE_TYPE_LONG;
     Token->VariableMemoryIdx = 0;
+    Token->AddressSpace      = 0;
+    Token->IsAddress         = FALSE;
 
     if (Token->Value == NULL)
     {
@@ -340,6 +344,9 @@ CopyToken(PSCRIPT_ENGINE_TOKEN Token)
     TokenCopy->Len          = Token->Len;
     TokenCopy->Value        = (char *)calloc(strlen(Token->Value) + 1, sizeof(char));
     TokenCopy->VariableType = Token->VariableType;
+    TokenCopy->VariableMemoryIdx = Token->VariableMemoryIdx;
+    TokenCopy->AddressSpace      = Token->AddressSpace;
+    TokenCopy->IsAddress         = Token->IsAddress;
 
     if (TokenCopy->Value == NULL)
     {

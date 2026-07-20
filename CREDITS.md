@@ -28,3 +28,4 @@ Just so you know – the attributions listed on this credits page are acknowledg
 - Artem Shishkin ([@honorary_bot](https://twitter.com/honorary_bot)) for always answering our hypervisor questions
 - unrustled.jimmies for helping us debug and fix issues, and his contributions in HyperDbg
 - Hari Mishal ([@harimishal1](https://github.com/harimishal1)) for his works on the hypertrace project for supporting Last Branch Record (LBR)
+- Masoud Rahimi Jafari ([@masoudrahimi01](https://github.com/masoudrahimi01)) for his works on the hypertrace project for supporting Intel Processor Trace (PT)

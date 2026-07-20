@@ -18,6 +18,8 @@
 #    include <sys/syscall.h>
 #    include <errno.h>
 #    include <stdint.h>
+#    include <string.h>
+#    include <signal.h>
 #endif // defined(__linux__)
 
 /**
@@ -72,6 +74,25 @@ PlatformZeroMemory(PVOID Buffer, SIZE_T Size)
     RtlZeroMemory(Buffer, Size);
 #elif defined(__linux__)
     memset(Buffer, 0, Size);
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for RtlCopyMemory / memcpy
+ *
+ * @param Destination pointer to the destination buffer
+ * @param Source pointer to the source buffer
+ * @param Size number of bytes to copy
+ */
+VOID
+PlatformCopyMemory(PVOID Destination, const VOID * Source, SIZE_T Size)
+{
+#if defined(_WIN32)
+    RtlCopyMemory(Destination, Source, Size);
+#elif defined(__linux__)
+    memcpy(Destination, Source, Size);
 #else
 #    error "Unsupported platform"
 #endif
@@ -140,6 +161,108 @@ PlatformSprintf(char * Buffer, SIZE_T BufferSize, const char * Format, ...)
 #endif
     va_end(Args);
     return Result;
+}
+
+/**
+ * @brief Platform independent wrapper for strnlen_s / strnlen
+ *
+ * @param Str string to measure (must not be NULL)
+ * @param MaxLength maximum number of characters to examine
+ * @return SIZE_T length of the string, capped at MaxLength
+ */
+SIZE_T
+PlatformStrnlen(const char * Str, SIZE_T MaxLength)
+{
+#if defined(_WIN32)
+    return strnlen_s(Str, MaxLength);
+#elif defined(__linux__)
+    return strnlen(Str, MaxLength);
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for strcpy_s
+ *
+ * @details Copies Src into the DestSize-byte Dest buffer, including the null
+ * terminator. On Linux there is no standard strcpy_s, so this performs the same
+ * bounds check: if Src (plus terminator) does not fit, Dest is set to an empty
+ * string and a non-zero error is returned, matching strcpy_s's behavior.
+ *
+ * @param Dest destination buffer
+ * @param DestSize size of the destination buffer in bytes
+ * @param Src source string
+ * @return INT 0 on success, non-zero on failure
+ */
+INT
+PlatformStrCpy(char * Dest, SIZE_T DestSize, const char * Src)
+{
+#if defined(_WIN32)
+    return strcpy_s(Dest, DestSize, Src);
+#elif defined(__linux__)
+    // NOT YET TESTED!! So needs some testing to see if it actually behaves the same as strcpy_S on windows
+    SIZE_T Length;
+
+    if (Dest == NULL || DestSize == 0 || Src == NULL)
+    {
+        if (Dest != NULL && DestSize != 0)
+        {
+            Dest[0] = '\0';
+        }
+        return -1;
+    }
+
+    Length = strlen(Src);
+
+    if (Length >= DestSize)
+    {
+        //
+        // Source does not fit (need room for the null terminator too)
+        //
+        Dest[0] = '\0';
+        return -1;
+    }
+
+    memcpy(Dest, Src, Length + 1);
+    return 0;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for Sleep / usleep
+ *
+ * @param Milliseconds number of milliseconds to suspend the calling thread
+ */
+VOID
+PlatformSleep(DWORD Milliseconds)
+{
+#if defined(_WIN32)
+    Sleep(Milliseconds);
+#elif defined(__linux__)
+    usleep((useconds_t)Milliseconds * 1000);
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for DebugBreak / raise(SIGTRAP)
+ *
+ * @details Delivers a breakpoint trap to the calling process.
+ */
+VOID
+PlatformDebugBreak(VOID)
+{
+#if defined(_WIN32)
+    DebugBreak();
+#elif defined(__linux__)
+    raise(SIGTRAP);
+#else
+#    error "Unsupported platform"
+#endif
 }
 
 /**
@@ -338,6 +461,32 @@ PlatformCloseHandle(HANDLE Handle)
 #elif defined(__linux__)
     (void)Handle; // TODO: free the underlying cond/eventfd or close the fd
     return TRUE;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for CreateThread
+ *
+ * @param Routine thread entry point
+ * @param Param   parameter passed to the thread routine
+ * @return HANDLE to the new thread, or NULL on failure
+ */
+HANDLE
+PlatformCreateThread(PLATFORM_THREAD_ROUTINE Routine, PVOID Param)
+{
+#if defined(_WIN32)
+    return CreateThread(NULL, 0, Routine, Param, 0, NULL);
+#elif defined(__linux__)
+    //
+    // TODO: back this with pthread_create when the Linux kernel-debugger
+    //       transport is implemented. Returning NULL leaves the listening
+    //       thread unstarted, which is all the callers check for.
+    //
+    (void)Routine;
+    (void)Param;
+    return NULL;
 #else
 #    error "Unsupported platform"
 #endif
@@ -607,6 +756,150 @@ PlatformUnmapFile(VOID * BaseAddress, SIZE_T FileSize, HANDLE FileHandle)
     (void)BaseAddress;
     (void)FileSize;
     (void)FileHandle;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for CreateProcessW
+ *
+ * @details Creates a process with the given creation flags. STARTUPINFO is kept
+ * internal so it never leaks to callers. The command line is passed writable to
+ * match CreateProcessW's contract.
+ *
+ * @param FileName application name
+ * @param CommandLine command line
+ * @param CreationFlags process creation flags
+ * @param ProcessInformation out-param receiving process/thread handles and ids
+ * @return BOOLEAN TRUE on success, FALSE on failure
+ */
+BOOLEAN
+PlatformCreateProcess(const WCHAR * FileName, const WCHAR * CommandLine, DWORD CreationFlags, PPROCESS_INFORMATION ProcessInformation)
+{
+#if defined(_WIN32)
+    STARTUPINFOW StartupInfo;
+
+    memset(&StartupInfo, 0, sizeof(StartupInfo));
+    StartupInfo.cb = sizeof(STARTUPINFOA);
+
+    return (BOOLEAN)CreateProcessW(FileName,
+                                   (WCHAR *)CommandLine,
+                                   NULL,
+                                   NULL,
+                                   FALSE,
+                                   CreationFlags,
+                                   NULL,
+                                   NULL,
+                                   &StartupInfo,
+                                   ProcessInformation);
+#elif defined(__linux__)
+    //
+    // TODO (linux): back with fork()+execve() (and CREATE_SUSPENDED via a
+    //               ptrace/stop) when the Linux user-debugger backend lands.
+    //
+    (void)FileName;
+    (void)CommandLine;
+    (void)CreationFlags;
+    (void)ProcessInformation;
+    return FALSE;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for OpenProcess
+ *
+ * @param DesiredAccess desired access rights
+ * @param InheritHandle whether the handle is inheritable
+ * @param ProcessId target process id
+ * @return HANDLE process handle, or NULL on failure
+ */
+HANDLE
+PlatformOpenProcess(DWORD DesiredAccess, BOOL InheritHandle, DWORD ProcessId)
+{
+#if defined(_WIN32)
+    return OpenProcess(DesiredAccess, InheritHandle, ProcessId);
+#elif defined(__linux__)
+    //
+    // TODO (linux): resolve a /proc/<pid> handle or ptrace-attach when the
+    //               Linux user-debugger backend lands.
+    //
+    (void)DesiredAccess;
+    (void)InheritHandle;
+    (void)ProcessId;
+    return NULL;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for TerminateProcess
+ *
+ * @param Process process handle
+ * @param ExitCode exit code to set
+ * @return BOOL non-zero on success, zero on failure
+ */
+BOOL
+PlatformTerminateProcess(HANDLE Process, UINT ExitCode)
+{
+#if defined(_WIN32)
+    return TerminateProcess(Process, ExitCode);
+#elif defined(__linux__)
+    //
+    // TODO (linux): kill(pid, SIGKILL) once process handles are real.
+    //
+    (void)Process;
+    (void)ExitCode;
+    return FALSE;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for ResumeThread
+ *
+ * @param Thread thread handle
+ * @return DWORD previous suspend count, or (DWORD)-1 on failure
+ */
+DWORD
+PlatformResumeThread(HANDLE Thread)
+{
+#if defined(_WIN32)
+    return ResumeThread(Thread);
+#elif defined(__linux__)
+    //
+    // TODO (linux): PTRACE_CONT / SIGCONT once thread handles are real.
+    //
+    (void)Thread;
+    return (DWORD)-1;
+#else
+#    error "Unsupported platform"
+#endif
+}
+
+/**
+ * @brief Platform independent wrapper for GetExitCodeProcess
+ *
+ * @param Process process handle
+ * @param ExitCode out-param receiving the exit code
+ * @return BOOL non-zero on success, zero on failure
+ */
+BOOL
+PlatformGetExitCodeProcess(HANDLE Process, LPDWORD ExitCode)
+{
+#if defined(_WIN32)
+    return GetExitCodeProcess(Process, ExitCode);
+#elif defined(__linux__)
+    //
+    // TODO (linux): waitpid(WNOHANG)/read /proc state once handles are real.
+    //
+    (void)Process;
+    (void)ExitCode;
+    return FALSE;
 #else
 #    error "Unsupported platform"
 #endif

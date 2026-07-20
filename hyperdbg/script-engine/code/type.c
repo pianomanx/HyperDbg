@@ -12,6 +12,314 @@
  */
 #include "pch.h"
 
+typedef struct _TYPE_ALLOCATION_NODE
+{
+    PVARIABLE_TYPE                Type;
+    struct _TYPE_ALLOCATION_NODE * Next;
+} TYPE_ALLOCATION_NODE, *PTYPE_ALLOCATION_NODE;
+
+typedef struct _STRUCT_TAG_NODE
+{
+    char *                    Name;
+    PVARIABLE_TYPE            Type;
+    struct _STRUCT_TAG_NODE * Next;
+} STRUCT_TAG_NODE, *PSTRUCT_TAG_NODE;
+
+typedef struct _TYPEDEF_NODE
+{
+    char *                Name;
+    PVARIABLE_TYPE        Type;
+    struct _TYPEDEF_NODE * Next;
+} TYPEDEF_NODE, *PTYPEDEF_NODE;
+
+static PTYPE_ALLOCATION_NODE TypeAllocations;
+static PSTRUCT_TAG_NODE      StructTags;
+static PTYPEDEF_NODE         Typedefs;
+
+static PVARIABLE_TYPE
+AllocateType(VOID)
+{
+    PVARIABLE_TYPE Type = (PVARIABLE_TYPE)calloc(1, sizeof(VARIABLE_TYPE));
+    PTYPE_ALLOCATION_NODE Node;
+
+    if (!Type)
+    {
+        return NULL;
+    }
+
+    Node = (PTYPE_ALLOCATION_NODE)calloc(1, sizeof(TYPE_ALLOCATION_NODE));
+    if (!Node)
+    {
+        free(Type);
+        return NULL;
+    }
+
+    Node->Type      = Type;
+    Node->Next      = TypeAllocations;
+    TypeAllocations = Node;
+    return Type;
+}
+
+static unsigned int
+AlignTo(unsigned int Value, unsigned int Alignment)
+{
+    return (Value + Alignment - 1) & ~(Alignment - 1);
+}
+
+VOID
+InitializeTypeContext(VOID)
+{
+    TypeAllocations = NULL;
+    StructTags      = NULL;
+    Typedefs        = NULL;
+}
+
+VOID
+UninitializeTypeContext(VOID)
+{
+    while (Typedefs)
+    {
+        PTYPEDEF_NODE Next = Typedefs->Next;
+        free(Typedefs->Name);
+        free(Typedefs);
+        Typedefs = Next;
+    }
+
+    while (StructTags)
+    {
+        PSTRUCT_TAG_NODE Next = StructTags->Next;
+        free(StructTags->Name);
+        free(StructTags);
+        StructTags = Next;
+    }
+
+    while (TypeAllocations)
+    {
+        PTYPE_ALLOCATION_NODE Next = TypeAllocations->Next;
+        PSTRUCT_MEMBER Member = TypeAllocations->Type->Members;
+        while (Member)
+        {
+            PSTRUCT_MEMBER NextMember = Member->Next;
+            free(Member->Name);
+            free(Member);
+            Member = NextMember;
+        }
+        free(TypeAllocations->Type->TagName);
+        free(TypeAllocations->Type);
+        free(TypeAllocations);
+        TypeAllocations = Next;
+    }
+}
+
+PVARIABLE_TYPE
+FindStructType(const char * TagName)
+{
+    PSTRUCT_TAG_NODE Node;
+    for (Node = StructTags; Node; Node = Node->Next)
+    {
+        if (!strcmp(Node->Name, TagName))
+        {
+            return Node->Type;
+        }
+    }
+    return NULL;
+}
+
+PVARIABLE_TYPE
+DeclareStructType(const char * TagName)
+{
+    PVARIABLE_TYPE Existing = FindStructType(TagName);
+    PSTRUCT_TAG_NODE Node;
+    PVARIABLE_TYPE Type;
+
+    if (Existing)
+    {
+        return Existing;
+    }
+
+    Type = AllocateType();
+    Node = (PSTRUCT_TAG_NODE)calloc(1, sizeof(STRUCT_TAG_NODE));
+    if (!Type || !Node)
+    {
+        free(Node);
+        return NULL;
+    }
+
+    Type->Kind    = TY_STRUCT;
+    Type->TagName = PlatformStrDup(TagName);
+    Node->Name    = PlatformStrDup(TagName);
+    Node->Type    = Type;
+    Node->Next    = StructTags;
+    StructTags    = Node;
+    return Type;
+}
+
+BOOLEAN
+AddStructMember(PVARIABLE_TYPE StructType, const char * Name, PVARIABLE_TYPE MemberType)
+{
+    PSTRUCT_MEMBER Member;
+    PSTRUCT_MEMBER * Tail;
+    unsigned int Order = 0;
+
+    if (!StructType || StructType->Kind != TY_STRUCT || StructType->IsComplete)
+    {
+        return FALSE;
+    }
+
+    Tail = &StructType->Members;
+    while (*Tail)
+    {
+        if (!strcmp((*Tail)->Name, Name))
+        {
+            return FALSE;
+        }
+        Order++;
+        Tail = &(*Tail)->Next;
+    }
+
+    Member = (PSTRUCT_MEMBER)calloc(1, sizeof(STRUCT_MEMBER));
+    if (!Member)
+    {
+        return FALSE;
+    }
+    Member->Name             = PlatformStrDup(Name);
+    Member->Type             = MemberType;
+    Member->DeclarationOrder = Order;
+    *Tail                    = Member;
+    return TRUE;
+}
+
+PSTRUCT_MEMBER
+FindStructMember(PVARIABLE_TYPE StructType, const char * Name)
+{
+    PSTRUCT_MEMBER Member;
+
+    if (!StructType || StructType->Kind != TY_STRUCT)
+    {
+        return NULL;
+    }
+
+    for (Member = StructType->Members; Member; Member = Member->Next)
+    {
+        if (!strcmp(Member->Name, Name))
+        {
+            return Member;
+        }
+    }
+
+    return NULL;
+}
+
+BOOLEAN
+CompleteStructType(PVARIABLE_TYPE StructType)
+{
+    unsigned int Offset = 0;
+    unsigned int Alignment = 1;
+    PSTRUCT_MEMBER Member;
+
+    if (!StructType || StructType->Kind != TY_STRUCT || StructType->IsComplete)
+    {
+        return FALSE;
+    }
+
+    for (Member = StructType->Members; Member; Member = Member->Next)
+    {
+        if (!Member->Type || !Member->Type->Align ||
+            (Member->Type->Kind == TY_STRUCT && !Member->Type->IsComplete))
+        {
+            return FALSE;
+        }
+        if (Offset > 0x7fffffffU - ((unsigned int)Member->Type->Align - 1))
+        {
+            return FALSE;
+        }
+        Offset         = AlignTo(Offset, (unsigned int)Member->Type->Align);
+        Member->Offset = Offset;
+        if ((unsigned int)Member->Type->Size > 0x7fffffffU - Offset)
+        {
+            return FALSE;
+        }
+        Offset += (unsigned int)Member->Type->Size;
+        if ((unsigned int)Member->Type->Align > Alignment)
+        {
+            Alignment = (unsigned int)Member->Type->Align;
+        }
+    }
+
+    if (StructType->Members && Offset > 0x7fffffffU - (Alignment - 1))
+    {
+        return FALSE;
+    }
+    StructType->Align      = (int)Alignment;
+    StructType->Size       = StructType->Members ? (int)AlignTo(Offset, Alignment) : 1;
+    StructType->IsComplete = TRUE;
+    return TRUE;
+}
+
+PVARIABLE_TYPE
+CreatePointerType(PVARIABLE_TYPE BaseType)
+{
+    PVARIABLE_TYPE Type = AllocateType();
+    if (Type)
+    {
+        Type->Kind       = TY_PTR;
+        Type->Size       = 8;
+        Type->Align      = 8;
+        Type->IsUnsigned = TRUE;
+        Type->Base       = BaseType;
+        Type->IsComplete = TRUE;
+    }
+    return Type;
+}
+
+PVARIABLE_TYPE
+CreateArrayType(PVARIABLE_TYPE BaseType, unsigned int ArrayLength)
+{
+    PVARIABLE_TYPE Type;
+    if (!BaseType || !ArrayLength ||
+        (BaseType->Kind == TY_STRUCT && !BaseType->IsComplete) ||
+        (unsigned int)BaseType->Size > 0x7fffffffU / ArrayLength)
+    {
+        return NULL;
+    }
+
+    Type = AllocateType();
+    if (Type)
+    {
+        Type->Kind       = TY_ARRAY;
+        Type->Size       = BaseType->Size * (int)ArrayLength;
+        Type->Align      = BaseType->Align;
+        Type->Base       = BaseType;
+        Type->ArrayLen   = (int)ArrayLength;
+        Type->IsComplete = TRUE;
+    }
+    return Type;
+}
+
+BOOLEAN
+AddTypedefType(const char * Name, PVARIABLE_TYPE Type)
+{
+    PTYPEDEF_NODE Node;
+    for (Node = Typedefs; Node; Node = Node->Next)
+    {
+        if (!strcmp(Node->Name, Name))
+        {
+            return FALSE;
+        }
+    }
+
+    Node = (PTYPEDEF_NODE)calloc(1, sizeof(TYPEDEF_NODE));
+    if (!Node)
+    {
+        return FALSE;
+    }
+    Node->Name = PlatformStrDup(Name);
+    Node->Type = Type;
+    Node->Next = Typedefs;
+    Typedefs   = Node;
+    return TRUE;
+}
+
 VARIABLE_TYPE * VARIABLE_TYPE_UNKNOWN = &(VARIABLE_TYPE) {TY_UNKNOWN};
 
 VARIABLE_TYPE * VARIABLE_TYPE_VOID = &(VARIABLE_TYPE) {TY_VOID, 1, 1};

@@ -98,6 +98,9 @@ E12->.ThreeOpFunc4 ( WstringNumber , WstringNumber , EXP ) @.ThreeOpFunc4
 
 E12->( BE )
 
+E12->E12 . MEMBER_NAME @MEMBER_DOT_READ
+E12->E12 -> MEMBER_NAME @MEMBER_ARROW_READ
+
 # Types must have '_' at the first
 E12->_register @PUSH
 E12->_global_id @PUSH
@@ -118,6 +121,7 @@ E12->_pseudo_register @PUSH
 
 E12->E13 ( VA2 ) @END_OF_CALLING_USER_DEFINED_FUNCTION_WITH_RETURNING_VALUE
 E13->_function_id @PUSH
+MEMBER_NAME->_local_id @PUSH
 
 VA2->eps
 VA2->EXP VA3

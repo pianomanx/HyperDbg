@@ -25,14 +25,15 @@ extern ACTIVE_DEBUGGING_PROCESS g_ActiveProcessDebuggingState;
 VOID
 CommandReadMemoryAndDisassemblerHelp()
 {
-    ShowMessages("db dc dd dq !db !dc !dd !dq & u u64 !u !u64 u2 u32 !u2 !u32 : reads the  "
-                 "memory different shapes (hex) and disassembler\n");
+    ShowMessages("db dc dd dq !db !dc !dd !dq & u u64 !u !u64 u2 u32 !u2 !u32 & dl & !dl : reads the  "
+                 "memory in different shapes (hex), disassembles, or walks linked lists\n");
     ShowMessages("db  Byte and ASCII characters\n");
     ShowMessages("dc  Double-word values (4 bytes) and ASCII characters\n");
     ShowMessages("dd  Double-word values (4 bytes)\n");
     ShowMessages("dq  Quad-word values (8 bytes). \n");
     ShowMessages("u u64 Disassembler at the target address (x64) \n");
     ShowMessages("u2 u32  Disassembler at the target address (x86) \n");
+    ShowMessages("dl  Walks a linked list starting at an address and shows each node\n");
     ShowMessages("\nIf you want to read physical memory then add '!' at the "
                  "start of the command\n");
     ShowMessages("you can also disassemble physical memory using '!u'\n\n");
@@ -45,6 +46,7 @@ CommandReadMemoryAndDisassemblerHelp()
     ShowMessages("syntax : \tu64 [Address (hex)] [l Length (hex)] [pid ProcessId (hex)]\n");
     ShowMessages("syntax : \tu2 [Address (hex)] [l Length (hex)] [pid ProcessId (hex)]\n");
     ShowMessages("syntax : \tu32 [Address (hex)] [l Length (hex)] [pid ProcessId (hex)]\n");
+    ShowMessages("syntax : \tdl [Address (hex)] [o Offset (hex)] [l Count (hex)] [pid ProcessId (hex)]\n");
 
     ShowMessages("\n");
     ShowMessages("\t\te.g : db nt!Kd_DEFAULT_Mask\n");
@@ -59,6 +61,9 @@ CommandReadMemoryAndDisassemblerHelp()
     ShowMessages("\t\te.g : u nt!ExAllocatePoolWithTag+30\n");
     ShowMessages("\t\te.g : u fffff8077356f010\n");
     ShowMessages("\t\te.g : u fffff8077356f010+@rcx\n");
+    ShowMessages("\t\te.g : dl nt!PsActiveProcessHead\n");
+    ShowMessages("\t\te.g : dl @rax o 8\n");
+    ShowMessages("\t\te.g : dl fffff8077356f010 o 8 l 20 pid 4\n");
 }
 
 /**
@@ -74,10 +79,14 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
 {
     UINT32  Pid             = 0;
     UINT32  Length          = 0;
+    UINT64  Offset          = 0;
+    UINT64  MaxNodes        = DL_DEFAULT_MAX_NODES;
     UINT64  TargetAddress   = 0;
     BOOLEAN IsNextProcessId = FALSE;
     BOOLEAN IsFirstCommand  = TRUE;
     BOOLEAN IsNextLength    = FALSE;
+    BOOLEAN IsNextOffset    = FALSE;
+    BOOLEAN IsDlCommand     = FALSE;
 
     string FirstCommand = GetCaseSensitiveStringFromCommandToken(CommandTokens.front());
 
@@ -106,6 +115,9 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
         if (IsFirstCommand)
         {
             IsFirstCommand = FALSE;
+            IsDlCommand    = CompareLowerCaseStrings(CommandTokens.at(0), "dl") |
+                             CompareLowerCaseStrings(CommandTokens.at(0), "!dl");
+
             continue;
         }
 
@@ -122,7 +134,19 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
 
         if (IsNextLength == TRUE)
         {
-            if (!ConvertTokenToUInt32(Section, &Length))
+            //
+            // For 'dl', 'l' means max node count rather than a byte length,
+            // but it's parsed the same way
+            //
+            if (IsDlCommand)
+            {
+                if (!ConvertTokenToUInt64(Section, &MaxNodes))
+                {
+                    ShowMessages("err, you should enter a valid count\n\n");
+                    return;
+                }
+            }
+            else if (!ConvertTokenToUInt32(Section, &Length))
             {
                 ShowMessages("err, you should enter a valid length\n\n");
                 return;
@@ -131,9 +155,26 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
             continue;
         }
 
+        if (IsNextOffset == TRUE)
+        {
+            if (!ConvertTokenToUInt64(Section, &Offset))
+            {
+                ShowMessages("err, you should enter a valid offset\n\n");
+                return;
+            }
+            IsNextOffset = FALSE;
+            continue;
+        }
+
         if (CompareLowerCaseStrings(Section, "l"))
         {
             IsNextLength = TRUE;
+            continue;
+        }
+
+        if (IsDlCommand && CompareLowerCaseStrings(Section, "o"))
+        {
+            IsNextOffset = TRUE;
             continue;
         }
 
@@ -181,7 +222,10 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
         return;
     }
 
-    if (Length == 0)
+    //
+    // Check if the user didn't specify a length for d* and u* commands, then we use default value
+    //
+    if (Length == 0 && !IsDlCommand)
     {
         //
         // Default length (user doesn't specified)
@@ -199,7 +243,15 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
         }
     }
 
-    if (IsNextLength || IsNextProcessId)
+    //
+    // Check if the user didn't specify a max node count for dl command, then we use default value
+    //
+    if (IsDlCommand && MaxNodes == 0)
+    {
+        MaxNodes = DL_DEFAULT_MAX_NODES;
+    }
+
+    if (IsNextLength || IsNextProcessId || IsNextOffset)
     {
         ShowMessages("incorrect use of the '%s' command\n\n",
                      GetCaseSensitiveStringFromCommandToken(CommandTokens.at(0)).c_str());
@@ -351,5 +403,13 @@ CommandReadMemoryAndDisassembler(vector<CommandToken> CommandTokens, string Comm
             Pid,
             Length,
             NULL);
+    }
+    else if (IsDlCommand)
+    {
+        HyperDbgShowMemoryLinkedList(TargetAddress,
+                                     CompareLowerCaseStrings(CommandTokens.at(0), "dl") ? DEBUGGER_READ_VIRTUAL_ADDRESS : DEBUGGER_READ_PHYSICAL_ADDRESS,
+                                     Pid,
+                                     Offset,
+                                     MaxNodes);
     }
 }
