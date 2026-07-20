@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.22.0.0] - 2026-XX-XX
+## [0.22.0.0] - 2026-07-20
 New release of the HyperDbg Debugger.
 
 ### Added
@@ -31,6 +31,7 @@ New release of the HyperDbg Debugger.
 - Fix `DRIVER_IRQL_NOT_LESS_OR_EQUAL` when reading registers on a manually-halted core, thanks to [@munraimix](https://github.com/munraimix) ([link](https://github.com/HyperDbg/HyperDbg/pull/648))
 - Fix the error for referencing guest registers twice in both KD and VMX codes ([link](https://github.com/HyperDbg/HyperDbg/commit/d37352fd7ee3b7c9a4a5383c847f210dc6c3d716))
 - Fix handle compound assignment to struct members ([link](https://github.com/HyperDbg/HyperDbg/commit/9d60a4ddd484603043ad74fcc665899af7f4ff21))
+- Updated semantic scripts by adding test cases for the structs in the script engine ([link](https://github.com/HyperDbg/HyperDbg/pull/651))
 
 ## [0.21.0.0] - 2026-07-05
 New release of the HyperDbg Debugger.
